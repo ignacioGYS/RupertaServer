@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  app-monitor:
+    build: .
+    container_name: ruperta-monitor
+    restart: unless-stopped
+    ports:
+      # Puerto_de_tu_PC : Puerto_interno_del_contenedor
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
