@@ -1,9 +1,15 @@
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { sshManager } from './sshClient.js';
 import { config } from './config.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distPath = path.join(__dirname, '../dist');
 
 const app = express();
 app.use(cors());
@@ -388,6 +394,20 @@ app.post('/api/sftp/create-directory', async (req, res) => {
   }
 });
 
+// Serve built frontend in production (after npm run build)
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+  console.log(`[Server] Serving frontend from ${distPath}`);
+} else {
+  console.log('[Server] No dist/ folder found — run "npm run build" for production');
+}
+
 // Create HTTP server & WS Server
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
@@ -468,7 +488,6 @@ wss.on('connection', async (ws) => {
 });
 
 // Start listening
-const PORT = config.port;
-server.listen(PORT, () => {
-  console.log(`[Server] rupertaMonitor backend running on http://localhost:${PORT}`);
+server.listen(config.port, config.host, () => {
+  console.log(`[Server] rupertaMonitor running on http://${config.host}:${config.port}`);
 });
