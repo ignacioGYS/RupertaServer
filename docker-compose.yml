@@ -5,8 +5,12 @@ services:
     build: .
     container_name: ruperta-monitor
     restart: unless-stopped
-    ports:
-      # Puerto_de_tu_PC : Puerto_interno_del_contenedor
-      - "3000:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -16,7 +16,9 @@ COPY . .
 # Compilamos el frontend construido en Vite
 RUN npm run build
 
-# Exponemos el puerto (asumo el 3000, si tu server.js usa otro, cámbialo aquí)
+ENV PORT=3000
+ENV HOST=0.0.0.0
+
 EXPOSE 3000
 
 # Arrancamos la aplicación usando el script que tenés definido
