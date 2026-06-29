@@ -9,8 +9,8 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3001
     ports:
-      - "3000:3000"
+      - "3001:3001"
     extra_hosts:
       - "host.docker.internal:host-gateway"

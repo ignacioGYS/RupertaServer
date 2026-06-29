@@ -16,10 +16,10 @@ COPY . .
 # Compilamos el frontend construido en Vite
 RUN npm run build
 
-ENV PORT=3000
+ENV PORT=3001
 ENV HOST=0.0.0.0
 
-EXPOSE 3000
+EXPOSE 3001
 
 # Arrancamos la aplicación usando el script que tenés definido
 CMD ["npm", "start"]
