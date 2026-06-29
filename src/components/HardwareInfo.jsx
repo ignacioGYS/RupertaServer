@@ -171,13 +171,36 @@ function CpuSection({ cpu }) {
   );
 }
 
-function RamSection({ ram }) {
+function RamSection({ ram, memSummary, ramSource }) {
   if (!ram?.length) {
     return (
-      <SectionCard icon={<MemoryStick size={18} />} title="Memoria RAM (DIMMs)" color="#4FACFE">
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-          No se pudo leer la info de DIMMs. Puede que <code>dmidecode</code> requiera privilegios de root (sudo sin contraseña).
-        </p>
+      <SectionCard icon={<MemoryStick size={18} />} title="Memoria RAM" color="#4FACFE">
+        {memSummary ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ background: 'rgba(79,172,254,0.08)', border: '1px solid rgba(79,172,254,0.2)', borderRadius: '10px', padding: '16px' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block' }}>Memoria total instalada</span>
+              <span style={{ fontWeight: 700, color: '#4FACFE', fontSize: '1.4rem' }}>{memSummary.totalGB} GB</span>
+              {memSummary.availableGB && (
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                  Disponible: {memSummary.availableGB} GB
+                </span>
+              )}
+            </div>
+            {ramSource === 'summary' && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', margin: 0 }}>
+                No se pudo leer cada módulo RAM (DIMM). Para ver marca, slot y velocidad por módulo, en el servidor ejecutá:
+                <code style={{ display: 'block', marginTop: '8px', padding: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', fontSize: '0.75rem' }}>
+                  sudo visudo
+                </code>
+                y agregá: <code style={{ fontSize: '0.75rem' }}>nacho ALL=(ALL) NOPASSWD: /usr/sbin/dmidecode</code>
+              </p>
+            )}
+          </div>
+        ) : (
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            No se pudo leer información de memoria RAM.
+          </p>
+        )}
       </SectionCard>
     );
   }
@@ -214,13 +237,22 @@ function RamSection({ ram }) {
 }
 
 function BoardSection({ board, bios }) {
+  const hasBoard = board?.manufacturer && board.manufacturer !== 'Unknown'
+    || board?.product && board.product !== 'Unknown';
   return (
     <SectionCard icon={<CircuitBoard size={18} />} title="Placa Base & BIOS" color="#f97316">
-      <div className="sys-specs-list">
-        <SpecRow label="Fabricante" value={board?.manufacturer} />
-        <SpecRow label="Modelo" value={board?.product} />
-        <SpecRow label="Versión" value={board?.version} mono />
-      </div>
+      {hasBoard ? (
+        <div className="sys-specs-list">
+          <SpecRow label="Fabricante" value={board?.manufacturer} />
+          <SpecRow label="Modelo" value={board?.product} />
+          <SpecRow label="Versión" value={board?.version} mono />
+          <SpecRow label="Serial" value={board?.serial} mono />
+        </div>
+      ) : (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
+          No se pudo leer la placa base. Verificá que exista <code>/sys/class/dmi/id/</code> en el servidor.
+        </p>
+      )}
       {bios && (
         <CollapsibleSection title="Información del BIOS">
           <div className="sys-specs-list">
@@ -386,7 +418,7 @@ export default function HardwareInfo() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         <GpuSection gpu={data.gpu} />
         <CpuSection cpu={data.cpu} />
-        <RamSection ram={data.ram} />
+        <RamSection ram={data.ram} memSummary={data.memSummary} ramSource={data.ramSource} />
         <BoardSection board={data.board} bios={data.bios} />
         <NetworkSection network={data.network} />
         <StorageSection storage={data.storage} />

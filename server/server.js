@@ -317,60 +317,100 @@ app.get('/api/docker/logs', async (req, res) => {
   }
 });
 
+function parseHardwareSections(output) {
+  const sections = {};
+  let current = null;
+  for (const line of output.split('\n')) {
+    const match = line.match(/^===([A-Z_]+)===$/);
+    if (match) {
+      current = match[1];
+      sections[current] = [];
+    } else if (current && line.trim()) {
+      sections[current].push(line);
+    }
+  }
+  return sections;
+}
+
+function cleanDmiValue(value) {
+  if (!value || value === 'NONE') return null;
+  const ignored = [
+    'Unknown', 'Not Specified', 'Not Provided', 'Default string',
+    'To be filled by O.E.M.', 'System Product Name', 'System Manufacturer',
+  ];
+  return ignored.includes(value) ? null : value;
+}
+
+function parseDmidecodeMemoryBlock(text) {
+  const dimms = [];
+  // Split por cada "Handle ... type 17" (cada módulo RAM), no por líneas vacías
+  // (las líneas vacías se pierden al parsear secciones SSH)
+  const blocks = text.split(/\n(?=Handle 0x[0-9A-Fa-f]+, DMI type 17)/);
+
+  for (const block of blocks) {
+    if (!/Memory Device/i.test(block)) continue;
+    const dimm = {};
+    for (const line of block.split('\n')) {
+      const idx = line.indexOf(':');
+      if (idx === -1) continue;
+      const key = line.slice(0, idx).trim();
+      const val = line.slice(idx + 1).trim();
+      if (key === 'Size') dimm.size = val;
+      else if (key === 'Type') dimm.type = val;
+      else if (key === 'Speed' || key === 'Configured Memory Speed') dimm.speed = dimm.speed || val;
+      else if (key === 'Manufacturer') dimm.manufacturer = val;
+      else if (key === 'Part Number') dimm.partNumber = val;
+      else if (key === 'Bank Locator') dimm.bank = val;
+      else if (key === 'Locator') dimm.slot = val;
+    }
+    // Preferir Bank Locator como identificador (ej. "P0 CHANNEL A/B")
+    if (dimm.bank) dimm.slot = dimm.bank;
+    if (dimm.size && !dimm.size.includes('No Module Installed') && dimm.size !== '0 MB' && dimm.size !== '0 GB') {
+      dimms.push(dimm);
+    }
+  }
+  return dimms;
+}
+
 // 10. Hardware Info API
 app.get('/api/hardware-info', async (req, res) => {
   try {
-    // Run all hardware detection commands in a single SSH round-trip
+    const dmiCmd = (type) =>
+      `LANG=C LC_ALL=C sudo -n /usr/sbin/dmidecode -t ${type} 2>/dev/null || LANG=C LC_ALL=C /usr/sbin/dmidecode -t ${type} 2>/dev/null || echo "NONE"`;
+
     const command = [
-      // GPU via lspci (always available)
       `echo "===GPU_PCI==="`,
       `lspci -mm 2>/dev/null | grep -i -E "vga|3d|display|video" || echo "NONE"`,
-      // nvidia-smi (optional - only on NVIDIA systems)
       `echo "===GPU_NVIDIA==="`,
       `nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || echo "NONE"`,
-      // CPU details
       `echo "===CPU==="`,
-      `lscpu 2>/dev/null || echo "NONE"`,
-      // RAM DIMMs via dmidecode (needs sudo)
+      `LANG=C lscpu 2>/dev/null || echo "NONE"`,
+      // Placa base y BIOS desde sysfs (no requiere root)
+      `echo "===DMI_SYS==="`,
+      `for f in board_vendor board_name board_version board_serial bios_vendor bios_version bios_date sys_vendor product_name; do v=$(cat /sys/class/dmi/id/$f 2>/dev/null); echo "$f=\${v:-NONE}"; done`,
       `echo "===RAM==="`,
-      `sudo dmidecode -t memory 2>/dev/null | grep -E "Size:|Type:|Speed:|Manufacturer:|Part Number:|Locator:" | grep -v "No Module Installed" || echo "NONE"`,
-      // Motherboard info
+      dmiCmd('memory'),
       `echo "===BOARD==="`,
-      `sudo dmidecode -t baseboard 2>/dev/null | grep -E "Manufacturer:|Product Name:|Version:|Serial Number:" || echo "NONE"`,
-      // BIOS info
+      dmiCmd('baseboard'),
       `echo "===BIOS==="`,
-      `sudo dmidecode -t bios 2>/dev/null | grep -E "Vendor:|Version:|Release Date:" || echo "NONE"`,
-      // Network interfaces via lspci + ip
+      dmiCmd('bios'),
+      `echo "===MEMINFO==="`,
+      `grep -E '^MemTotal:|^MemAvailable:' /proc/meminfo 2>/dev/null || echo "NONE"`,
       `echo "===NET_PCI==="`,
       `lspci -mm 2>/dev/null | grep -i -E "ethernet|network|wireless|wifi|wi-fi" || echo "NONE"`,
       `echo "===NET_IFACES==="`,
       `ip -o link show 2>/dev/null | awk '{print $2, $9}' || echo "NONE"`,
-      // Storage devices
       `echo "===STORAGE==="`,
       `lsblk -d -o NAME,SIZE,TYPE,MODEL,ROTA,TRAN 2>/dev/null | grep -v "loop" || echo "NONE"`,
-      // USB devices
       `echo "===USB==="`,
       `lsusb 2>/dev/null | head -30 || echo "NONE"`,
-      // All PCI devices grouped
       `echo "===PCI_ALL==="`,
       `lspci 2>/dev/null || echo "NONE"`,
-    ].join(' && ');
+      `true`,
+    ].join(' ; ');
 
     const output = await sshManager.exec(command);
-    const sections = {};
-    const sectionKeys = ['GPU_PCI', 'GPU_NVIDIA', 'CPU', 'RAM', 'BOARD', 'BIOS', 'NET_PCI', 'NET_IFACES', 'STORAGE', 'USB', 'PCI_ALL'];
-    
-    // Parse sections
-    let current = null;
-    for (const line of output.split('\n')) {
-      const match = line.match(/^===([A-Z_]+)===$/);
-      if (match) {
-        current = match[1];
-        sections[current] = [];
-      } else if (current && line.trim()) {
-        sections[current].push(line.trim());
-      }
-    }
+    const sections = parseHardwareSections(output);
 
     // --- Parse GPU (PCI) ---
     const gpuPci = (sections['GPU_PCI'] || []).filter(l => l !== 'NONE').map(line => {
@@ -411,26 +451,63 @@ app.get('/api/hardware-info', async (req, res) => {
     };
 
     // --- Parse RAM DIMMs ---
-    const ramDimms = [];
-    let currentDimm = {};
-    (sections['RAM'] || []).filter(l => l !== 'NONE').forEach(line => {
-      if (line.startsWith('Size:')) {
-        if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
-        currentDimm = { size: line.replace('Size:', '').trim() };
-      } else if (line.startsWith('Type:') && !line.includes('Error') && !line.includes('Form')) {
-        currentDimm.type = line.replace('Type:', '').trim();
-      } else if (line.startsWith('Speed:')) {
-        currentDimm.speed = line.replace('Speed:', '').trim();
-      } else if (line.startsWith('Manufacturer:')) {
-        currentDimm.manufacturer = line.replace('Manufacturer:', '').trim();
-      } else if (line.startsWith('Part Number:')) {
-        currentDimm.partNumber = line.replace('Part Number:', '').trim();
-      } else if (line.startsWith('Locator:') && !line.includes('Bank')) {
-        currentDimm.slot = line.replace('Locator:', '').trim();
-      }
+    const ramText = (sections['RAM'] || []).join('\n');
+    let validDimms = parseDmidecodeMemoryBlock(ramText);
+    let ramSource = validDimms.length > 0 ? 'dmidecode' : 'none';
+
+    // Fallback: parser línea a línea (detecta cada Handle type 17 como nuevo módulo)
+    if (validDimms.length === 0 && ramText && ramText !== 'NONE') {
+      const ramDimms = [];
+      let currentDimm = {};
+      ramText.split('\n').forEach((line) => {
+        const trimmed = line.trim();
+        if (/^Handle 0x[0-9A-Fa-f]+, DMI type 17/.test(trimmed)) {
+          if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
+          currentDimm = {};
+          return;
+        }
+        if (trimmed.startsWith('Size:')) {
+          currentDimm.size = trimmed.replace('Size:', '').trim();
+        } else if (trimmed.startsWith('Type:') && !trimmed.includes('Error') && !trimmed.includes('Detail')) {
+          currentDimm.type = trimmed.replace('Type:', '').trim();
+        } else if (trimmed.startsWith('Speed:') || trimmed.startsWith('Configured Memory Speed:')) {
+          currentDimm.speed = trimmed.replace(/^[^:]+:\s*/, '').trim();
+        } else if (trimmed.startsWith('Manufacturer:')) {
+          currentDimm.manufacturer = trimmed.replace('Manufacturer:', '').trim();
+        } else if (trimmed.startsWith('Part Number:')) {
+          currentDimm.partNumber = trimmed.replace('Part Number:', '').trim();
+        } else if (trimmed.startsWith('Bank Locator:')) {
+          currentDimm.slot = trimmed.replace('Bank Locator:', '').trim();
+        } else if (trimmed.startsWith('Locator:') && !trimmed.includes('Bank') && !currentDimm.slot) {
+          currentDimm.slot = trimmed.replace('Locator:', '').trim();
+        }
+      });
+      if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
+      validDimms = ramDimms.filter(d => d.size && !d.size.includes('No Module'));
+      if (validDimms.length > 0) ramSource = 'dmidecode';
+    }
+
+    // --- Memoria total desde /proc/meminfo ---
+    const meminfo = {};
+    (sections['MEMINFO'] || []).forEach((line) => {
+      const m = line.match(/^(\w+):\s+(\d+)/);
+      if (m) meminfo[m[1]] = parseInt(m[2], 10);
     });
-    if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
-    const validDimms = ramDimms.filter(d => d.size && d.size !== 'No Module Installed' && !d.size.includes('No Module'));
+    const memSummary = meminfo.MemTotal
+      ? {
+          totalKB: meminfo.MemTotal,
+          totalGB: (meminfo.MemTotal / (1024 * 1024)).toFixed(1),
+          availableGB: meminfo.MemAvailable ? (meminfo.MemAvailable / (1024 * 1024)).toFixed(1) : null,
+        }
+      : null;
+    if (validDimms.length === 0 && memSummary) ramSource = 'summary';
+
+    // --- Parse DMI sysfs (placa base sin root) ---
+    const dmiSys = {};
+    (sections['DMI_SYS'] || []).forEach((line) => {
+      const idx = line.indexOf('=');
+      if (idx !== -1) dmiSys[line.slice(0, idx)] = line.slice(idx + 1);
+    });
 
     // --- Parse Motherboard ---
     const boardRaw = {};
@@ -439,10 +516,10 @@ app.get('/api/hardware-info', async (req, res) => {
       if (idx !== -1) { boardRaw[line.substring(0, idx).trim()] = line.substring(idx + 1).trim(); }
     });
     const board = {
-      manufacturer: boardRaw['Manufacturer'] || 'Unknown',
-      product: boardRaw['Product Name'] || 'Unknown',
-      version: boardRaw['Version'] || null,
-      serial: boardRaw['Serial Number'] || null,
+      manufacturer: cleanDmiValue(dmiSys.board_vendor) || cleanDmiValue(boardRaw['Manufacturer']) || 'Unknown',
+      product: cleanDmiValue(dmiSys.board_name) || cleanDmiValue(boardRaw['Product Name']) || 'Unknown',
+      version: cleanDmiValue(dmiSys.board_version) || cleanDmiValue(boardRaw['Version']),
+      serial: cleanDmiValue(dmiSys.board_serial) || cleanDmiValue(boardRaw['Serial Number']),
     };
 
     // --- Parse BIOS ---
@@ -452,9 +529,9 @@ app.get('/api/hardware-info', async (req, res) => {
       if (idx !== -1) { biosRaw[line.substring(0, idx).trim()] = line.substring(idx + 1).trim(); }
     });
     const bios = {
-      vendor: biosRaw['Vendor'] || 'Unknown',
-      version: biosRaw['Version'] || 'Unknown',
-      releaseDate: biosRaw['Release Date'] || null,
+      vendor: cleanDmiValue(dmiSys.bios_vendor) || cleanDmiValue(biosRaw['Vendor']) || 'Unknown',
+      version: cleanDmiValue(dmiSys.bios_version) || cleanDmiValue(biosRaw['Version']) || 'Unknown',
+      releaseDate: cleanDmiValue(dmiSys.bios_date) || cleanDmiValue(biosRaw['Release Date']),
     };
 
     // --- Parse Network PCI cards ---
@@ -487,7 +564,18 @@ app.get('/api/hardware-info', async (req, res) => {
       return m ? m[1].trim() : line.trim();
     }).filter(Boolean);
 
-    res.json({ gpu: { pci: gpuPci, nvidia: gpuNvidia }, cpu, ram: validDimms, board, bios, network: { cards: netCards, interfaces: netIfaces }, storage, usb });
+    res.json({
+      gpu: { pci: gpuPci, nvidia: gpuNvidia },
+      cpu,
+      ram: validDimms,
+      memSummary,
+      ramSource,
+      board,
+      bios,
+      network: { cards: netCards, interfaces: netIfaces },
+      storage,
+      usb,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
