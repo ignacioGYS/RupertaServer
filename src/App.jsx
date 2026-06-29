@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
 import FileExplorer from './components/FileExplorer';
 import Terminal from './components/Terminal';
 import ConnectionStatus from './components/ConnectionStatus';
+import HardwareInfo from './components/HardwareInfo';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -15,6 +16,7 @@ function App() {
     { id: 'dashboard', label: 'Panel Control', icon: <Activity /> },
     { id: 'docker', label: 'Contenedores Docker', icon: <Layers /> },
     { id: 'processes', label: 'Procesos', icon: <Cpu /> },
+    { id: 'hardware', label: 'Hardware', icon: <HardwareIcon /> },
     { id: 'files', label: 'Archivos (SFTP)', icon: <Folder /> },
     { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon /> }
   ];
@@ -27,6 +29,8 @@ function App() {
         return <DockerManager />;
       case 'processes':
         return <ProcessManager />;
+      case 'hardware':
+        return <HardwareInfo />;
       case 'files':
         return <FileExplorer />;
       case 'terminal':
@@ -44,6 +48,8 @@ function App() {
         return { title: 'Contenedores Docker', subtitle: 'Monitoreo y administración de servicios dockerizados' };
       case 'processes':
         return { title: 'Procesos Activos', subtitle: 'Administración de tareas y carga en segundo plano' };
+      case 'hardware':
+        return { title: 'Hardware del Servidor', subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' };
       case 'files':
         return { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' };
       case 'terminal':

@@ -317,6 +317,182 @@ app.get('/api/docker/logs', async (req, res) => {
   }
 });
 
+// 10. Hardware Info API
+app.get('/api/hardware-info', async (req, res) => {
+  try {
+    // Run all hardware detection commands in a single SSH round-trip
+    const command = [
+      // GPU via lspci (always available)
+      `echo "===GPU_PCI==="`,
+      `lspci -mm 2>/dev/null | grep -i -E "vga|3d|display|video" || echo "NONE"`,
+      // nvidia-smi (optional - only on NVIDIA systems)
+      `echo "===GPU_NVIDIA==="`,
+      `nvidia-smi --query-gpu=name,memory.total,driver_version,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || echo "NONE"`,
+      // CPU details
+      `echo "===CPU==="`,
+      `lscpu 2>/dev/null || echo "NONE"`,
+      // RAM DIMMs via dmidecode (needs sudo)
+      `echo "===RAM==="`,
+      `sudo dmidecode -t memory 2>/dev/null | grep -E "Size:|Type:|Speed:|Manufacturer:|Part Number:|Locator:" | grep -v "No Module Installed" || echo "NONE"`,
+      // Motherboard info
+      `echo "===BOARD==="`,
+      `sudo dmidecode -t baseboard 2>/dev/null | grep -E "Manufacturer:|Product Name:|Version:|Serial Number:" || echo "NONE"`,
+      // BIOS info
+      `echo "===BIOS==="`,
+      `sudo dmidecode -t bios 2>/dev/null | grep -E "Vendor:|Version:|Release Date:" || echo "NONE"`,
+      // Network interfaces via lspci + ip
+      `echo "===NET_PCI==="`,
+      `lspci -mm 2>/dev/null | grep -i -E "ethernet|network|wireless|wifi|wi-fi" || echo "NONE"`,
+      `echo "===NET_IFACES==="`,
+      `ip -o link show 2>/dev/null | awk '{print $2, $9}' || echo "NONE"`,
+      // Storage devices
+      `echo "===STORAGE==="`,
+      `lsblk -d -o NAME,SIZE,TYPE,MODEL,ROTA,TRAN 2>/dev/null | grep -v "loop" || echo "NONE"`,
+      // USB devices
+      `echo "===USB==="`,
+      `lsusb 2>/dev/null | head -30 || echo "NONE"`,
+      // All PCI devices grouped
+      `echo "===PCI_ALL==="`,
+      `lspci 2>/dev/null || echo "NONE"`,
+    ].join(' && ');
+
+    const output = await sshManager.exec(command);
+    const sections = {};
+    const sectionKeys = ['GPU_PCI', 'GPU_NVIDIA', 'CPU', 'RAM', 'BOARD', 'BIOS', 'NET_PCI', 'NET_IFACES', 'STORAGE', 'USB', 'PCI_ALL'];
+    
+    // Parse sections
+    let current = null;
+    for (const line of output.split('\n')) {
+      const match = line.match(/^===([A-Z_]+)===$/);
+      if (match) {
+        current = match[1];
+        sections[current] = [];
+      } else if (current && line.trim()) {
+        sections[current].push(line.trim());
+      }
+    }
+
+    // --- Parse GPU (PCI) ---
+    const gpuPci = (sections['GPU_PCI'] || []).filter(l => l !== 'NONE').map(line => {
+      // lspci -mm format: slot "Class" "Vendor" "Device" ...
+      const parts = line.match(/"([^"]*)"/g)?.map(s => s.replace(/"/g, '')) || [];
+      return { slot: line.split(' ')[0], class: parts[0] || '', vendor: parts[1] || '', device: parts[2] || '' };
+    });
+
+    // --- Parse NVIDIA GPU ---
+    const gpuNvidia = (sections['GPU_NVIDIA'] || []).filter(l => l !== 'NONE').map(line => {
+      const parts = line.split(',').map(s => s.trim());
+      return { name: parts[0], vramMB: parseInt(parts[1]) || 0, driver: parts[2], tempC: parseInt(parts[3]) || null, utilizationPct: parseInt(parts[4]) || 0 };
+    });
+
+    // --- Parse CPU (lscpu) ---
+    const cpuRaw = {};
+    (sections['CPU'] || []).filter(l => l !== 'NONE').forEach(line => {
+      const idx = line.indexOf(':');
+      if (idx !== -1) {
+        const key = line.substring(0, idx).trim();
+        const val = line.substring(idx + 1).trim();
+        cpuRaw[key] = val;
+      }
+    });
+    const cpu = {
+      model: cpuRaw['Model name'] || cpuRaw['Model Name'] || 'Unknown',
+      architecture: cpuRaw['Architecture'] || 'Unknown',
+      sockets: parseInt(cpuRaw['Socket(s)']) || 1,
+      coresPerSocket: parseInt(cpuRaw['Core(s) per socket']) || parseInt(cpuRaw['Core(s) per cluster']) || 1,
+      threadsPerCore: parseInt(cpuRaw['Thread(s) per core']) || 1,
+      totalThreads: parseInt(cpuRaw['CPU(s)']) || 1,
+      maxFreqMHz: cpuRaw['CPU max MHz'] || cpuRaw['CPU MHz'] || null,
+      minFreqMHz: cpuRaw['CPU min MHz'] || null,
+      cacheL3: cpuRaw['L3 cache'] || null,
+      cacheL2: cpuRaw['L2 cache'] || null,
+      virtualization: cpuRaw['Virtualization'] || null,
+      flags: cpuRaw['Flags'] ? cpuRaw['Flags'].split(' ').slice(0, 20) : [],
+    };
+
+    // --- Parse RAM DIMMs ---
+    const ramDimms = [];
+    let currentDimm = {};
+    (sections['RAM'] || []).filter(l => l !== 'NONE').forEach(line => {
+      if (line.startsWith('Size:')) {
+        if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
+        currentDimm = { size: line.replace('Size:', '').trim() };
+      } else if (line.startsWith('Type:') && !line.includes('Error') && !line.includes('Form')) {
+        currentDimm.type = line.replace('Type:', '').trim();
+      } else if (line.startsWith('Speed:')) {
+        currentDimm.speed = line.replace('Speed:', '').trim();
+      } else if (line.startsWith('Manufacturer:')) {
+        currentDimm.manufacturer = line.replace('Manufacturer:', '').trim();
+      } else if (line.startsWith('Part Number:')) {
+        currentDimm.partNumber = line.replace('Part Number:', '').trim();
+      } else if (line.startsWith('Locator:') && !line.includes('Bank')) {
+        currentDimm.slot = line.replace('Locator:', '').trim();
+      }
+    });
+    if (Object.keys(currentDimm).length > 0) ramDimms.push(currentDimm);
+    const validDimms = ramDimms.filter(d => d.size && d.size !== 'No Module Installed' && !d.size.includes('No Module'));
+
+    // --- Parse Motherboard ---
+    const boardRaw = {};
+    (sections['BOARD'] || []).filter(l => l !== 'NONE').forEach(line => {
+      const idx = line.indexOf(':');
+      if (idx !== -1) { boardRaw[line.substring(0, idx).trim()] = line.substring(idx + 1).trim(); }
+    });
+    const board = {
+      manufacturer: boardRaw['Manufacturer'] || 'Unknown',
+      product: boardRaw['Product Name'] || 'Unknown',
+      version: boardRaw['Version'] || null,
+      serial: boardRaw['Serial Number'] || null,
+    };
+
+    // --- Parse BIOS ---
+    const biosRaw = {};
+    (sections['BIOS'] || []).filter(l => l !== 'NONE').forEach(line => {
+      const idx = line.indexOf(':');
+      if (idx !== -1) { biosRaw[line.substring(0, idx).trim()] = line.substring(idx + 1).trim(); }
+    });
+    const bios = {
+      vendor: biosRaw['Vendor'] || 'Unknown',
+      version: biosRaw['Version'] || 'Unknown',
+      releaseDate: biosRaw['Release Date'] || null,
+    };
+
+    // --- Parse Network PCI cards ---
+    const netCards = (sections['NET_PCI'] || []).filter(l => l !== 'NONE').map(line => {
+      const parts = line.match(/"([^"]*)"/g)?.map(s => s.replace(/"/g, '')) || [];
+      return { slot: line.split(' ')[0], class: parts[0] || '', vendor: parts[1] || '', device: parts[2] || '' };
+    });
+
+    // --- Parse Network Interfaces ---
+    const netIfaces = (sections['NET_IFACES'] || []).filter(l => l !== 'NONE').map(line => {
+      const parts = line.trim().split(/\s+/);
+      return { name: parts[0]?.replace(':', ''), state: parts[1] || 'UNKNOWN' };
+    }).filter(i => i.name && i.name !== 'lo');
+
+    // --- Parse Storage ---
+    const storageLines = (sections['STORAGE'] || []).filter(l => l !== 'NONE');
+    const storage = storageLines.slice(1).map(line => { // skip header
+      const parts = line.trim().split(/\s+/);
+      return {
+        name: parts[0], size: parts[1], type: parts[2],
+        model: parts.slice(3, parts.length - 2).join(' ') || 'Unknown',
+        rotational: parts[parts.length - 2] === '1',
+        transport: parts[parts.length - 1] !== '\\' ? parts[parts.length - 1] : null,
+      };
+    }).filter(d => d.name && d.type !== 'loop');
+
+    // --- Parse USB ---
+    const usb = (sections['USB'] || []).filter(l => l !== 'NONE').map(line => {
+      const m = line.match(/Bus \d+ Device \d+: ID [\w:]+ (.+)/);
+      return m ? m[1].trim() : line.trim();
+    }).filter(Boolean);
+
+    res.json({ gpu: { pci: gpuPci, nvidia: gpuNvidia }, cpu, ram: validDimms, board, bios, network: { cards: netCards, interfaces: netIfaces }, storage, usb });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 10. SFTP List API
 app.get('/api/sftp/list', async (req, res) => {
   const { path = '.' } = req.query;
