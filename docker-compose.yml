@@ -14,3 +14,21 @@ services:
       - "3001:3001"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ruperta-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ruperta
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ruperta_secure_pass}
+      POSTGRES_DB: ruperta_monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

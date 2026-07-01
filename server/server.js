@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import { sshManager } from './sshClient.js';
 import { config } from './config.js';
+import { initializeDb, query } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '../dist');
@@ -877,6 +878,52 @@ wss.on('connection', async (ws, request) => {
     console.error('[WS] Terminal socket error:', err.message);
   });
 });
+
+// Initialize Database
+initializeDb();
+
+// Background metrics collection every 5 minutes
+setInterval(async () => {
+  try {
+    if (!sshManager.connected) return;
+
+    // Fetch from our local endpoints
+    const port = config.port || 3001;
+    const baseUrl = `http://${config.host || '127.0.0.1'}:${port}`;
+    
+    // Server metrics
+    const sysRes = await fetch(`${baseUrl}/api/metrics`);
+    if (sysRes.ok) {
+      const sysData = await sysRes.json();
+      await query(`INSERT INTO server_metrics (cpu_usage_percent, ram_total_mb, ram_used_mb) VALUES ($1, $2, $3)`, [
+        sysData.cpu,
+        sysData.memory.total / 1024 / 1024,
+        sysData.memory.used / 1024 / 1024
+      ]);
+    }
+    
+    // GPU metrics
+    const gpuRes = await fetch(`${baseUrl}/api/gpu/metrics`);
+    if (gpuRes.ok) {
+      const gpuData = await gpuRes.json();
+      if (gpuData.gpus) {
+        for (const gpu of gpuData.gpus) {
+          await query(`INSERT INTO gpu_metrics (gpu_name, core_usage_percent, vram_total_mb, vram_used_mb, temperature_c, power_draw_w) VALUES ($1, $2, $3, $4, $5, $6)`, [
+            gpu.name,
+            gpu.gpu_util,
+            gpu.vram_total_mb,
+            gpu.vram_used_mb,
+            gpu.temperature_c,
+            gpu.power_draw_w
+          ]);
+        }
+      }
+    }
+    // console.log('✅ Background metrics saved to DB');
+  } catch (err) {
+    console.error('[DB] Error saving background metrics:', err.message);
+  }
+}, 5 * 60 * 1000);
 
 // Start listening
 server.listen(config.port, config.host, () => {
