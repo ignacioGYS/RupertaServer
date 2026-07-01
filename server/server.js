@@ -665,9 +665,17 @@ app.post('/api/system/power', async (req, res) => {
     return res.status(400).json({ error: 'Acción inválida. Use "reboot" o "shutdown".' });
   }
   try {
-    const cmd = action === 'reboot' ? 'sudo reboot' : 'sudo shutdown -h now';
+    const cmd = action === 'reboot' ? 'reboot' : 'shutdown -h now';
+    const finalCmd = config.ssh.password
+      ? `echo "${config.ssh.password}" | sudo -S ${cmd}`
+      : `sudo ${cmd}`;
+
+    console.log(`[System] Executing power command: ${action}`);
     // Fire and forget — the connection will drop immediately after the command
-    sshManager.exec(cmd).catch(() => {});
+    sshManager.exec(finalCmd).catch((err) => {
+      console.log(`[System] Executed ${action} command, connection dropped/ended:`, err.message);
+    });
+    
     res.json({ success: true, message: action === 'reboot' ? 'Reiniciando servidor...' : 'Apagando servidor...' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -707,40 +715,74 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', async (ws) => {
   console.log('[WS] Terminal connection request received');
   let shellStream = null;
+  let isClosed = false;
+
+  ws.on('close', () => {
+    console.log('[WS] Terminal connection closed');
+    isClosed = true;
+    if (shellStream) {
+      shellStream.end();
+      shellStream = null;
+    }
+  });
 
   try {
     const conn = await sshManager.getConnection();
+    if (isClosed) return;
+    
     conn.shell({ term: 'xterm-256color', cols: 100, rows: 30 }, (err, stream) => {
       if (err) {
-        ws.send(`\r\n\x1b[31;1m[Error] Failed to open SSH shell: ${err.message}\x1b[0m\r\n`);
-        return ws.close();
+        console.error('[WS] Failed to open SSH shell stream:', err.message);
+        if (!isClosed) {
+          try {
+            ws.send(`\r\n\x1b[31;1m[Error] Failed to open SSH shell: ${err.message}\x1b[0m\r\n`);
+            ws.close();
+          } catch (_) {}
+        }
+        return;
+      }
+      
+      if (isClosed) {
+        stream.end();
+        return;
       }
       
       shellStream = stream;
 
       // Pipe SSH shell output to WebSocket
       stream.on('data', (data) => {
-        ws.send(data.toString());
+        if (!isClosed) {
+          try { ws.send(data.toString()); } catch (_) {}
+        }
       });
 
       stream.on('close', () => {
         console.log('[WS] SSH Shell Stream closed');
-        ws.close();
+        if (!isClosed) {
+          try { ws.close(); } catch (_) {}
+        }
       });
 
       stream.stderr.on('data', (data) => {
-        ws.send(data.toString());
+        if (!isClosed) {
+          try { ws.send(data.toString()); } catch (_) {}
+        }
       });
     });
   } catch (err) {
-    ws.send(`\r\n\x1b[31;1m[Error] SSH Connection failed: ${err.message}\x1b[0m\r\n`);
-    ws.close();
+    console.error('[WS] SSH connection error for terminal:', err.message);
+    if (!isClosed) {
+      try {
+        ws.send(`\r\n\x1b[31;1m[Error] SSH Connection failed: ${err.message}\x1b[0m\r\n`);
+        ws.close();
+      } catch (_) {}
+    }
     return;
   }
 
   // Handle messages from client
   ws.on('message', (message) => {
-    if (!shellStream) return;
+    if (!shellStream || isClosed) return;
     try {
       const msg = JSON.parse(message.toString());
       if (msg.type === 'data') {
@@ -750,15 +792,7 @@ wss.on('connection', async (ws) => {
       }
     } catch (e) {
       // Fallback if message is raw binary/string
-      shellStream.write(message.toString());
-    }
-  });
-
-  ws.on('close', () => {
-    console.log('[WS] Terminal connection closed');
-    if (shellStream) {
-      shellStream.end();
-      shellStream = null;
+      try { shellStream.write(message.toString()); } catch (_) {}
     }
   });
 
