@@ -682,6 +682,62 @@ app.post('/api/system/power', async (req, res) => {
   }
 });
 
+// 16. GPU Metrics API
+app.get('/api/gpu/metrics', async (req, res) => {
+  try {
+    const script = `
+for card in /sys/class/drm/card[0-9]; do
+  if [ -d "$card/device" ]; then
+    slot=$(cat $card/device/uevent | grep PCI_SLOT_NAME | cut -d= -f2)
+    name=$(lspci -s $slot 2>/dev/null | cut -d: -f3- | sed 's/^[ \\t]*//')
+    if [ -z "$name" ]; then name="AMD Radeon GPU ($slot)"; fi
+    busy=$(cat $card/device/gpu_busy_percent 2>/dev/null || echo "0")
+    membus=$(cat $card/device/mem_busy_percent 2>/dev/null || echo "0")
+    vram_total=$(cat $card/device/mem_info_vram_total 2>/dev/null || echo "0")
+    vram_used=$(cat $card/device/mem_info_vram_used 2>/dev/null || echo "0")
+    temp=$(cat $card/device/hwmon/hwmon*/temp1_input 2>/dev/null || echo "0")
+    fan=$(cat $card/device/hwmon/hwmon*/fan1_input 2>/dev/null || echo "0")
+    power=$(cat $card/device/hwmon/hwmon*/power1_input 2>/dev/null || echo "0")
+    freq_gpu=$(cat $card/device/hwmon/hwmon*/freq1_input 2>/dev/null || echo "0")
+    freq_mem=$(cat $card/device/hwmon/hwmon*/freq2_input 2>/dev/null || echo "0")
+    echo "$card|$slot|$name|$busy|$membus|$vram_total|$vram_used|$temp|$fan|$power|$freq_gpu|$freq_mem"
+  fi
+done
+    `;
+
+    const output = await sshManager.exec(script);
+    if (!output.trim()) {
+      return res.json([]);
+    }
+
+    const gpus = output.split('\n').filter(Boolean).map(line => {
+      const parts = line.split('|');
+      return {
+        card: parts[0],
+        slot: parts[1],
+        name: parts[2],
+        utilization: parseInt(parts[3], 10) || 0,
+        memActivity: parseInt(parts[4], 10) || 0,
+        vram: {
+          total: parseInt(parts[5], 10) || 0,
+          used: parseInt(parts[6], 10) || 0
+        },
+        temp: Math.round((parseInt(parts[7], 10) || 0) / 1000), // convert to °C
+        fanSpeed: parseInt(parts[8], 10) || 0, // RPM
+        power: Math.round((parseInt(parts[9], 10) || 0) / 1000000 * 10) / 10, // convert to W
+        clocks: {
+          gpu: Math.round((parseInt(parts[10], 10) || 0) / 1000000), // convert to MHz
+          mem: Math.round((parseInt(parts[11], 10) || 0) / 1000000)  // convert to MHz
+        }
+      };
+    });
+
+    res.json(gpus);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve built frontend in production (after npm run build)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
@@ -712,10 +768,23 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-wss.on('connection', async (ws) => {
+wss.on('connection', async (ws, request) => {
   console.log('[WS] Terminal connection request received');
   let shellStream = null;
   let isClosed = false;
+
+  let initialCommand = null;
+  if (request) {
+    try {
+      const parsedUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+      const cmd = parsedUrl.searchParams.get('cmd');
+      if (cmd === 'nvtop') {
+        initialCommand = 'export TERM=xterm-256color && exec nvtop\r';
+      }
+    } catch (e) {
+      console.error('[WS] Failed to parse connection request query parameters:', e.message);
+    }
+  }
 
   ws.on('close', () => {
     console.log('[WS] Terminal connection closed');
@@ -748,6 +817,14 @@ wss.on('connection', async (ws) => {
       }
       
       shellStream = stream;
+
+      if (initialCommand) {
+        setTimeout(() => {
+          if (!isClosed && shellStream) {
+            try { shellStream.write(initialCommand); } catch (_) {}
+          }
+        }, 500);
+      }
 
       // Pipe SSH shell output to WebSocket
       stream.on('data', (data) => {

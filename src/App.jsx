@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -7,6 +7,7 @@ import FileExplorer from './components/FileExplorer';
 import Terminal from './components/Terminal';
 import ConnectionStatus from './components/ConnectionStatus';
 import HardwareInfo from './components/HardwareInfo';
+import GpuMonitor from './components/GpuMonitor';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -17,6 +18,7 @@ function App() {
     { id: 'docker', label: 'Contenedores Docker', icon: <Layers /> },
     { id: 'processes', label: 'Procesos', icon: <Cpu /> },
     { id: 'hardware', label: 'Hardware', icon: <HardwareIcon /> },
+    { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon /> },
     { id: 'files', label: 'Archivos (SFTP)', icon: <Folder /> },
     { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon /> }
   ];
@@ -31,6 +33,8 @@ function App() {
         return <ProcessManager />;
       case 'hardware':
         return <HardwareInfo />;
+      case 'gpu':
+        return <GpuMonitor />;
       case 'files':
         return <FileExplorer />;
       case 'terminal':
@@ -50,6 +54,8 @@ function App() {
         return { title: 'Procesos Activos', subtitle: 'Administración de tareas y carga en segundo plano' };
       case 'hardware':
         return { title: 'Hardware del Servidor', subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' };
+      case 'gpu':
+        return { title: 'Monitoreo de GPU', subtitle: 'Rendimiento en tiempo real de GPU AMD/NVIDIA y consola interactiva nvtop' };
       case 'files':
         return { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' };
       case 'terminal':
