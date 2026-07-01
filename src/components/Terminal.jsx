@@ -105,6 +105,8 @@ export default function Terminal() {
   const [powerStatus, setPowerStatus] = useState(null);
 
   useEffect(() => {
+    let isDisposed = false;
+
     const term = new Xterm({
       cursorBlink: true,
       cursorStyle: 'block',
@@ -126,7 +128,7 @@ export default function Terminal() {
 
     if (containerRef.current) {
       term.open(containerRef.current);
-      fitAddon.fit();
+      try { fitAddon.fit(); } catch (_) {}
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -134,46 +136,64 @@ export default function Terminal() {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (isDisposed) return;
       setStatus('open');
       term.write('\r\n\x1b[32;1m[Conexion establecida con rupertaMonitor Terminal]\x1b[0m\r\n');
       setTimeout(() => {
-        if (fitAddonRef.current) {
+        if (isDisposed || !fitAddonRef.current) return;
+        try {
           fitAddonRef.current.fit();
-          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-        }
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+          }
+        } catch (_) {}
       }, 500);
     };
-    ws.onmessage = (event) => { term.write(event.data); };
-    ws.onclose   = () => {
-      setStatus('closed');
-      term.write('\r\n\x1b[31;1m[Conexion SSH finalizada]\x1b[0m\r\n');
+
+    ws.onmessage = (event) => {
+      if (isDisposed) return;
+      try { term.write(event.data); } catch (_) {}
     };
-    ws.onerror = () => setStatus('error');
+
+    ws.onclose = () => {
+      if (isDisposed) return;
+      setStatus('closed');
+      try { term.write('\r\n\x1b[31;1m[Conexion SSH finalizada]\x1b[0m\r\n'); } catch (_) {}
+    };
+
+    ws.onerror = () => {
+      if (!isDisposed) setStatus('error');
+    };
 
     const dataDisposable = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (!isDisposed && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'data', data }));
       }
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      if (fitAddonRef.current && xtermRef.current) {
-        try {
-          fitAddonRef.current.fit();
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'resize', cols: xtermRef.current.cols, rows: xtermRef.current.rows }));
-          }
-        } catch (e) { console.warn('Error fitting terminal:', e); }
-      }
+      if (isDisposed || !fitAddonRef.current || !xtermRef.current) return;
+      try {
+        fitAddonRef.current.fit();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', cols: xtermRef.current.cols, rows: xtermRef.current.rows }));
+        }
+      } catch (_) {}
     });
 
     if (containerRef.current) resizeObserver.observe(containerRef.current);
 
     return () => {
-      dataDisposable.dispose();
+      isDisposed = true;
       resizeObserver.disconnect();
+      dataDisposable.dispose();
+      // Null refs before dispose to prevent stale callbacks
+      fitAddonRef.current = null;
+      xtermRef.current    = null;
       term.dispose();
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
     };
   }, []);
 
