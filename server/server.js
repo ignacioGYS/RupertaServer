@@ -658,6 +658,22 @@ app.post('/api/sftp/create-directory', async (req, res) => {
   }
 });
 
+// 15. System Power API (reboot / shutdown)
+app.post('/api/system/power', async (req, res) => {
+  const { action } = req.body;
+  if (!action || !['reboot', 'shutdown'].includes(action)) {
+    return res.status(400).json({ error: 'Acción inválida. Use "reboot" o "shutdown".' });
+  }
+  try {
+    const cmd = action === 'reboot' ? 'sudo reboot' : 'sudo shutdown -h now';
+    // Fire and forget — the connection will drop immediately after the command
+    sshManager.exec(cmd).catch(() => {});
+    res.json({ success: true, message: action === 'reboot' ? 'Reiniciando servidor...' : 'Apagando servidor...' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve built frontend in production (after npm run build)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
