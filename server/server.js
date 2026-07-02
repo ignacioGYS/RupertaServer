@@ -739,6 +739,292 @@ done
   }
 });
 
+// 17. Network Info & Connected Devices API
+app.get('/api/network/connections', async (req, res) => {
+  try {
+    const command = [
+      `echo "===SESSIONS==="`,
+      `w -h 2>/dev/null || who 2>/dev/null || echo "NONE"`,
+      `echo "===SOCKETS==="`,
+      `ss -tuanp 2>/dev/null || ss -tuan 2>/dev/null || netstat -tuan 2>/dev/null || echo "NONE"`,
+      `echo "===IFACES==="`,
+      `ip -o addr show 2>/dev/null || ifconfig 2>/dev/null || echo "NONE"`,
+      `echo "===NEIGHBORS==="`,
+      `ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"`
+    ].join(' ; ');
+
+    const output = await sshManager.exec(command);
+    
+    // Parser helper for SSH sections
+    const parseSections = (txt) => {
+      const sections = {};
+      let current = null;
+      for (const line of txt.split('\n')) {
+        const match = line.match(/^===([A-Z_]+)===$/);
+        if (match) {
+          current = match[1];
+          sections[current] = [];
+        } else if (current && line.trim()) {
+          sections[current].push(line);
+        }
+      }
+      return sections;
+    };
+
+    const sections = parseSections(output);
+
+    // --- Parse Active Sessions ---
+    const rawSessions = sections['SESSIONS'] || [];
+    const sessions = [];
+    rawSessions.forEach(line => {
+      if (line === 'NONE') return;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const user = parts[0];
+        const tty = parts[1];
+        let from = parts[2];
+        let loginAt = parts[3];
+        let idle = parts[4] || '-';
+        let what = parts.slice(7).join(' ') || parts.slice(4).join(' ') || '-';
+        
+        if (from && (from.includes(':') || (from.includes('.') && !from.match(/^\d+\.\d+\.\d+\.\d+$/)))) {
+          what = parts.slice(6).join(' ') || '-';
+          idle = parts[3] || '-';
+          loginAt = parts[2];
+          from = 'Local / Console';
+        }
+        
+        sessions.push({ user, tty, from, loginAt, idle, what });
+      }
+    });
+
+    // --- Parse Sockets ---
+    const rawSockets = sections['SOCKETS'] || [];
+    const connections = [];
+    for (let i = 0; i < rawSockets.length; i++) {
+      const line = rawSockets[i].trim();
+      if (line === 'NONE' || line.startsWith('Netid') || line.startsWith('Active')) continue;
+      
+      const parts = line.split(/\s+/);
+      if (parts.length >= 5) {
+        const proto = parts[0];
+        const state = parts[1];
+        const local = parts[4] || '';
+        const peer = parts[5] || '';
+        const processVal = parts.slice(6).join(' ');
+
+        const parseIpPort = (addr) => {
+          if (!addr) return { ip: 'Unknown', port: '-' };
+          const lastColon = addr.lastIndexOf(':');
+          if (lastColon === -1) return { ip: addr, port: '-' };
+          let ip = addr.slice(0, lastColon);
+          const port = addr.slice(lastColon + 1);
+          if (ip.startsWith('[') && ip.endsWith(']')) {
+            ip = ip.slice(1, -1);
+          }
+          if (ip === '*' || ip === '0.0.0.0' || ip === '::') {
+            ip = 'Todos (0.0.0.0)';
+          }
+          return { ip, port };
+        };
+
+        const localInfo = parseIpPort(local);
+        const peerInfo = parseIpPort(peer);
+
+        let processName = '';
+        if (processVal && processVal.includes('users:')) {
+          const match = processVal.match(/"([^"]+)",pid=(\d+)/);
+          if (match) {
+            processName = `${match[1]} (PID ${match[2]})`;
+          } else {
+            processName = processVal;
+          }
+        }
+
+        connections.push({
+          proto,
+          state,
+          localIp: localInfo.ip,
+          localPort: localInfo.port,
+          peerIp: peerInfo.ip,
+          peerPort: peerInfo.port,
+          process: processName || '-'
+        });
+      }
+    }
+
+    // --- Parse Local Interfaces ---
+    const rawIfaces = sections['IFACES'] || [];
+    const interfaces = [];
+    rawIfaces.forEach(line => {
+      if (line === 'NONE') return;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const name = parts[1];
+        const type = parts[2];
+        const addr = parts[3];
+        
+        if (type === 'inet' || type === 'inet6') {
+          const ip = addr.split('/')[0];
+          const subnet = addr;
+          
+          let existing = interfaces.find(i => i.name === name);
+          if (!existing) {
+            existing = { name, ip: '-', ipv6: '-', mac: '-', state: 'UP' };
+            interfaces.push(existing);
+          }
+          if (type === 'inet') {
+            existing.ip = ip;
+            existing.subnet = subnet;
+          } else {
+            existing.ipv6 = ip;
+          }
+        } else if (type === 'link/ether' || parts[2] === 'ether') {
+          const mac = parts[3];
+          let existing = interfaces.find(i => i.name === name);
+          if (!existing) {
+            existing = { name, ip: '-', ipv6: '-', mac, state: 'UP' };
+            interfaces.push(existing);
+          } else {
+            existing.mac = mac;
+          }
+        }
+      }
+    });
+
+    // --- Parse Neighbors ---
+    const rawNeighbors = sections['NEIGHBORS'] || [];
+    const neighbors = [];
+    rawNeighbors.forEach(line => {
+      if (line === 'NONE' || line.startsWith('IP address') || line.startsWith('Address')) return;
+      
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 1) {
+        let ip = '';
+        let mac = '-';
+        let dev = '-';
+        let state = 'UNKNOWN';
+        
+        if (line.includes('lladdr')) {
+          ip = parts[0];
+          const lladdrIdx = parts.indexOf('lladdr');
+          if (lladdrIdx !== -1 && lladdrIdx + 1 < parts.length) {
+            mac = parts[lladdrIdx + 1];
+          }
+          const devIdx = parts.indexOf('dev');
+          if (devIdx !== -1 && devIdx + 1 < parts.length) {
+            dev = parts[devIdx + 1];
+          }
+          state = parts[parts.length - 1];
+        } else if (line.includes(' at ')) {
+          const ipMatch = line.match(/\(([^)]+)\)/);
+          const macMatch = line.match(/at ([0-9a-fA-F:]+)/);
+          const devMatch = line.match(/on (\w+)/);
+          ip = ipMatch ? ipMatch[1] : parts[0];
+          mac = macMatch ? macMatch[1] : '-';
+          dev = devMatch ? devMatch[1] : '-';
+          state = 'ACTIVE';
+        } else if (parts.length >= 6 && parts[3].includes(':')) {
+          ip = parts[0];
+          mac = parts[3];
+          dev = parts[5];
+          state = parts[2] === '0x2' ? 'REACHABLE' : 'STALE';
+        }
+        
+        if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
+          neighbors.push({ ip, mac, dev, state });
+        }
+      }
+    });
+
+    res.json({
+      sessions,
+      connections,
+      interfaces,
+      neighbors
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 18. Trigger Network Ping Sweep/Scan API
+app.post('/api/network/scan', async (req, res) => {
+  try {
+    const script = `
+      subnets=$(ip -o addr show | grep -v 'lo' | awk '{print $4}' | grep -E '^[0-9]')
+      for subnet in $subnets; do
+        if command -v nmap >/dev/null 2>&1; then
+          nmap -sn "$subnet" >/dev/null 2>&1
+        elif command -v arp-scan >/dev/null 2>&1; then
+          sudo -n arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1 || arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1
+        else
+          base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)
+          mask=$(echo $subnet | cut -d/ -f2)
+          if [ "$mask" = "24" ]; then
+            for i in {1..254}; do
+              ping -c 1 -w 1 "$base_ip.$i" >/dev/null 2>&1 &
+            done
+            wait
+          fi
+        fi
+      done
+      ip neigh show || arp -an || cat /proc/net/arp
+    `;
+
+    const output = await sshManager.exec(script);
+    
+    const neighbors = [];
+    const lines = output.split('\n');
+    lines.forEach(line => {
+      if (line.startsWith('Address') || line.startsWith('IP address') || !line.trim()) return;
+      
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 1) {
+        let ip = '';
+        let mac = '-';
+        let dev = '-';
+        let state = 'UNKNOWN';
+        
+        if (line.includes('lladdr')) {
+          ip = parts[0];
+          const lladdrIdx = parts.indexOf('lladdr');
+          if (lladdrIdx !== -1 && lladdrIdx + 1 < parts.length) {
+            mac = parts[lladdrIdx + 1];
+          }
+          const devIdx = parts.indexOf('dev');
+          if (devIdx !== -1 && devIdx + 1 < parts.length) {
+            dev = parts[devIdx + 1];
+          }
+          state = parts[parts.length - 1];
+        } else if (line.includes(' at ')) {
+          const ipMatch = line.match(/\(([^)]+)\)/);
+          const macMatch = line.match(/at ([0-9a-fA-F:]+)/);
+          const devMatch = line.match(/on (\w+)/);
+          ip = ipMatch ? ipMatch[1] : parts[0];
+          mac = macMatch ? macMatch[1] : '-';
+          dev = devMatch ? devMatch[1] : '-';
+          state = 'ACTIVE';
+        } else if (parts.length >= 6 && parts[3].includes(':')) {
+          ip = parts[0];
+          mac = parts[3];
+          dev = parts[5];
+          state = parts[2] === '0x2' ? 'REACHABLE' : 'STALE';
+        }
+        
+        if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
+          neighbors.push({ ip, mac, dev, state });
+        }
+      }
+    });
+
+    res.json({ success: true, neighbors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve built frontend in production (after npm run build)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));

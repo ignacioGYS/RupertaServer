@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -8,6 +8,7 @@ import Terminal from './components/Terminal';
 import ConnectionStatus from './components/ConnectionStatus';
 import HardwareInfo from './components/HardwareInfo';
 import GpuMonitor from './components/GpuMonitor';
+import NetworkMonitor from './components/NetworkMonitor';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -19,6 +20,7 @@ function App() {
     { id: 'processes', label: 'Procesos', icon: <Cpu /> },
     { id: 'hardware', label: 'Hardware', icon: <HardwareIcon /> },
     { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon /> },
+    { id: 'network', label: 'Red y Conexiones', icon: <Network /> },
     { id: 'files', label: 'Archivos (SFTP)', icon: <Folder /> },
     { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon /> }
   ];
@@ -35,6 +37,8 @@ function App() {
         return <HardwareInfo />;
       case 'gpu':
         return <GpuMonitor />;
+      case 'network':
+        return <NetworkMonitor />;
       case 'files':
         return <FileExplorer />;
       case 'terminal':
@@ -56,6 +60,8 @@ function App() {
         return { title: 'Hardware del Servidor', subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' };
       case 'gpu':
         return { title: 'Monitoreo de GPU', subtitle: 'Rendimiento en tiempo real de GPU AMD/NVIDIA y consola interactiva nvtop' };
+      case 'network':
+        return { title: 'Red y Conexiones', subtitle: 'Dispositivos en la red local y conexiones activas al servidor' };
       case 'files':
         return { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' };
       case 'terminal':
