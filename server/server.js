@@ -589,7 +589,7 @@ app.get('/api/sftp/list', async (req, res) => {
   const { path = '.' } = req.query;
   try {
     // Get real absolute path first
-    const absolutePath = await sshManager.exec(`cd ${path} && pwd`);
+    const absolutePath = await sshManager.exec(`cd "${path.replace(/"/g, '\\"')}" && pwd`);
     const files = await sshManager.sftpList(absolutePath);
     
     // Sort directories first, then files alphabetically
@@ -903,7 +903,9 @@ app.get('/api/network/connections', async (req, res) => {
       `echo "===IFACES==="`,
       `ip -o addr show 2>/dev/null || ifconfig 2>/dev/null || echo "NONE"`,
       `echo "===NEIGHBORS==="`,
-      `ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"`
+      `ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"`,
+      `echo "===AUTH_HISTORY==="`,
+      `last -a -i -n 30 2>/dev/null | grep -v 'wtmp begins' | grep -v '^$' || echo "NONE"`
     ].join(' ; ');
 
     const output = await sshManager.exec(command);
@@ -1090,11 +1092,28 @@ app.get('/api/network/connections', async (req, res) => {
       }
     });
 
+    // --- Parse Auth History ---
+    const rawAuth = sections['AUTH_HISTORY'] || [];
+    const authHistory = [];
+    rawAuth.forEach(line => {
+      if (line === 'NONE') return;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 8) {
+        const user = parts[0];
+        const tty = parts[1];
+        const from = parts[parts.length - 1]; // -a flag puts host/ip at the end
+        // Combine date/time parts (e.g. "Wed Jul  8 20:33 - 20:36 (00:02)")
+        const timeStr = line.substring(line.indexOf(parts[2]), line.lastIndexOf(from)).trim();
+        authHistory.push({ user, tty, time: timeStr, from });
+      }
+    });
+
     res.json({
       sessions,
       connections,
       interfaces,
-      neighbors
+      neighbors,
+      authHistory
     });
 
   } catch (err) {

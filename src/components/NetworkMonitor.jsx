@@ -6,7 +6,8 @@ export default function NetworkMonitor() {
     sessions: [],
     connections: [],
     interfaces: [],
-    neighbors: []
+    neighbors: [],
+    authHistory: []
   });
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -57,6 +58,20 @@ export default function NetworkMonitor() {
     return () => clearInterval(interval);
   }, []);
 
+  const isExternal = (c) => {
+    if (!c.peerIp) return false;
+    const ip = c.peerIp;
+    return !(
+      ip.includes('127.0.0.1') || 
+      ip.includes('::1') || 
+      ip.includes('Todos') || 
+      ip === '*' ||
+      ip.startsWith('192.168.') ||
+      ip.startsWith('10.') ||
+      (ip.startsWith('172.') && parseInt(ip.split('.')[1]) >= 16 && parseInt(ip.split('.')[1]) <= 31)
+    );
+  };
+
   // Filter connections
   const filteredConnections = data.connections.filter(c => {
     // Text search
@@ -74,17 +89,8 @@ export default function NetworkMonitor() {
     // Category filter
     if (filterConn === 'estab') return c.state === 'ESTAB';
     if (filterConn === 'listen') return c.state === 'LISTEN';
-    if (filterConn === 'external') {
-      // Exclude loopback/localhost IPs
-      const isLoopback = 
-        c.localIp.includes('127.0.0.1') || 
-        c.peerIp.includes('127.0.0.1') || 
-        c.localIp.includes('::1') || 
-        c.peerIp.includes('::1') || 
-        c.peerIp.includes('Todos') || 
-        c.peerIp === '*';
-      return !isLoopback;
-    }
+    if (filterConn === 'external') return isExternal(c);
+    
     return true;
   });
 
@@ -240,6 +246,53 @@ export default function NetworkMonitor() {
           </div>
         </div>
 
+        {/* Auth History */}
+        <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 700 }}>Últimos Inicios de Sesión Exitosos</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Historial de accesos recientes detectados en el sistema</p>
+          </div>
+          
+          <div className="table-container" style={{ overflowX: 'auto', maxHeight: '300px' }}>
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Terminal</th>
+                  <th>IP de Origen</th>
+                  <th>Fecha y Hora</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!data.authHistory || data.authHistory.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>Ningún inicio de sesión reciente</td>
+                  </tr>
+                ) : (
+                  data.authHistory.map((auth, idx) => {
+                    const external = !(auth.from.includes('127.0.0.1') || auth.from.includes('Local') || auth.from.startsWith('192.168.') || auth.from.startsWith('10.') || (auth.from.startsWith('172.') && parseInt(auth.from.split('.')[1]) >= 16 && parseInt(auth.from.split('.')[1]) <= 31));
+                    return (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{auth.user}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{auth.tty}</td>
+                        <td style={{ fontFamily: 'var(--font-mono)' }}>
+                          {auth.from}
+                          {external && (
+                            <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                              EXTERNO
+                            </span>
+                          )}
+                        </td>
+                        <td>{auth.time}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* Server Connections Sockets */}
         <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -327,6 +380,11 @@ export default function NetworkMonitor() {
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
                         {c.peerIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.peerPort}</span>
+                        {isExternal(c) && (
+                          <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                            EXTERNA
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span className={`status-badge`} style={{ 
