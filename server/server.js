@@ -5,9 +5,11 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
+import busboy from 'busboy';
 import { sshManager } from './sshClient.js';
 import { config } from './config.js';
 import { initializeDb, query } from './db.js';
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '../dist');
@@ -659,7 +661,158 @@ app.post('/api/sftp/create-directory', async (req, res) => {
   }
 });
 
-// 15. System Power API (reboot / shutdown)
+// 15. SFTP Upload File — streaming via busboy (no RAM limit)
+app.post('/api/sftp/upload', (req, res) => {
+  const destPath = req.headers['x-dest-path'] || req.query.path;
+  if (!destPath) {
+    return res.status(400).json({ error: 'Destination path required (x-dest-path header or ?path=)' });
+  }
+
+  const bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024 * 1024 } }); // 10 GB
+  const uploads = [];
+
+  bb.on('file', (fieldname, fileStream, info) => {
+    const { filename } = info;
+    const safeName = path.basename(filename);
+    const remotePath = destPath.endsWith('/')
+      ? `${destPath}${safeName}`
+      : `${destPath}/${safeName}`;
+
+    const uploadPromise = (async () => {
+      const sftp = await sshManager.getSftp();
+      return new Promise((resolve, reject) => {
+        const writeStream = sftp.createWriteStream(remotePath);
+        fileStream.pipe(writeStream);
+        writeStream.on('close', () => resolve({ name: safeName, path: remotePath }));
+        writeStream.on('error', (err) => { sshManager.sftpSession = null; reject(err); });
+        fileStream.on('error', reject);
+      });
+    })();
+
+    uploads.push(uploadPromise);
+  });
+
+  bb.on('finish', async () => {
+    try {
+      const results = await Promise.all(uploads);
+      res.json({ success: true, uploaded: results });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  bb.on('error', (err) => res.status(500).json({ error: err.message }));
+  req.pipe(bb);
+});
+
+// 15b. SFTP Upload Single File with full dest path (for directory tree uploads)
+// ?dest=/full/path/on/server/to/file.ext — creates all parent dirs with mkdir -p
+app.post('/api/sftp/upload-single', (req, res) => {
+  const destFullPath = req.query.dest;
+  if (!destFullPath) {
+    return res.status(400).json({ error: 'dest query param required' });
+  }
+
+  const bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024 * 1024 } });
+  let filePromise = null;
+  let gotFile = false;
+
+  bb.on('file', (fieldname, fileStream, info) => {
+    if (gotFile) { fileStream.resume(); return; }
+    gotFile = true;
+
+    filePromise = (async () => {
+      // Create parent directories recursively
+      const parentDir = path.dirname(destFullPath);
+      await sshManager.exec(`mkdir -p "${parentDir.replace(/"/g, '\\"')}"`);
+
+      // Stream file directly to SFTP
+      const sftp = await sshManager.getSftp();
+      return new Promise((resolve, reject) => {
+        const writeStream = sftp.createWriteStream(destFullPath);
+        fileStream.pipe(writeStream);
+        writeStream.on('close', () => resolve({ path: destFullPath }));
+        writeStream.on('error', (err) => { sshManager.sftpSession = null; reject(err); });
+        fileStream.on('error', reject);
+      });
+    })();
+  });
+
+  bb.on('finish', async () => {
+    try {
+      if (filePromise) await filePromise;
+      res.json({ success: true, path: destFullPath });
+    } catch (err) {
+      console.error('[upload-single] Error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  bb.on('error', (err) => res.status(500).json({ error: err.message }));
+  req.pipe(bb);
+});
+
+// 16. SFTP Download Binary
+app.get('/api/sftp/download-binary', async (req, res) => {
+  const { path: filePath } = req.query;
+  if (!filePath) {
+    return res.status(400).json({ error: 'File path is required' });
+  }
+  try {
+    const buffer = await sshManager.sftpReadBinary(filePath);
+    const fileName = path.basename(filePath);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17. SFTP Rename / Move within server
+app.post('/api/sftp/rename', async (req, res) => {
+  const { oldPath, newPath } = req.body;
+  if (!oldPath || !newPath) {
+    return res.status(400).json({ error: 'oldPath and newPath are required' });
+  }
+  try {
+    await sshManager.sftpRename(oldPath, newPath);
+    res.json({ success: true, message: 'Renamed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 18. SFTP Copy (via SSH cp -r)
+app.post('/api/sftp/copy', async (req, res) => {
+  const { sourcePath, destPath } = req.body;
+  if (!sourcePath || !destPath) {
+    return res.status(400).json({ error: 'sourcePath and destPath are required' });
+  }
+  try {
+    await sshManager.exec(`cp -r "${sourcePath}" "${destPath}"`);
+    res.json({ success: true, message: 'Copied successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 19. SFTP Move (via SSH mv)
+app.post('/api/sftp/move', async (req, res) => {
+  const { sourcePath, destPath } = req.body;
+  if (!sourcePath || !destPath) {
+    return res.status(400).json({ error: 'sourcePath and destPath are required' });
+  }
+  try {
+    await sshManager.exec(`mv "${sourcePath}" "${destPath}"`);
+    res.json({ success: true, message: 'Moved successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 20. System Power API (reboot / shutdown)
 app.post('/api/system/power', async (req, res) => {
   const { action } = req.body;
   if (!action || !['reboot', 'shutdown'].includes(action)) {
