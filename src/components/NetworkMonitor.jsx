@@ -993,7 +993,6 @@ export default function NetworkMonitor() {
                     );
                   })
                 )}
-                )}
               </tbody>
             </table>
           </div>
