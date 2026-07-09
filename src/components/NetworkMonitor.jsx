@@ -9,6 +9,11 @@ export default function NetworkMonitor() {
     neighbors: [],
     authHistory: []
   });
+  const [securityData, setSecurityData] = useState({
+    ufw: 'inactive',
+    fail2ban: 'not_installed',
+    sshAttacks: []
+  });
   const [resolvedIps, setResolvedIps] = useState({});
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -36,6 +41,18 @@ export default function NetworkMonitor() {
     }
   };
 
+  const fetchSecurityData = async () => {
+    try {
+      const res = await fetch('/api/network/security');
+      if (res.ok) {
+        const json = await res.json();
+        setSecurityData(json);
+      }
+    } catch (e) {
+      console.error('Error fetching security data:', e);
+    }
+  };
+
   const handleScan = async () => {
     setScanning(true);
     try {
@@ -51,6 +68,81 @@ export default function NetworkMonitor() {
     } finally {
       setScanning(false);
     }
+  };
+
+  const macOUIs = {
+    // Raspberry Pi
+    'b8:27:eb': 'Raspberry Pi Foundation',
+    'dc:a6:32': 'Raspberry Pi Trading',
+    'e4:5f:01': 'Raspberry Pi Trading',
+    
+    // Espressif (Smart Home Wiz / Tuya / IoT)
+    'a8:bb:50': 'Espressif (Smart Bulb Wiz)',
+    '24:a0:74': 'Espressif (Smart Devices)',
+    'fc:db:b3': 'Espressif (Smart Devices)',
+    '30:ae:a4': 'Espressif (Smart Devices)',
+    'df:fb:7a': 'Espressif (Smart Devices)',
+    '24:b2:de': 'Espressif (Smart Devices)',
+    '54:5a:a6': 'Espressif (Smart Devices)',
+    'c0:49:ef': 'Espressif (Smart Devices)',
+    'e8:db:84': 'Espressif (Smart Devices)',
+    
+    // Apple
+    'd8:07:b6': 'Apple Inc.',
+    '00:0d:93': 'Apple Inc.',
+    '3c:15:c2': 'Apple Inc.',
+    'f0:d1:a9': 'Apple Inc.',
+    '04:26:65': 'Apple Inc.',
+    '28:cf:da': 'Apple Inc.',
+    
+    // Google (Chromecast / Nest)
+    '00:1a:11': 'Google Inc.',
+    'f4:f5:d8': 'Google Inc.',
+    'da:a1:19': 'Google Inc.',
+    '1c:5a:3e': 'Google Inc.',
+    
+    // Samsung (Smart TVs / Phones)
+    'ec:0e:c4': 'Samsung Electronics',
+    '4c:bc:a8': 'Samsung Electronics',
+    '00:07:ab': 'Samsung Electronics',
+    'bc:72:b1': 'Samsung Electronics',
+    
+    // LG (Smart TVs)
+    '00:e0:91': 'LG Electronics',
+    '3c:cd:36': 'LG Electronics',
+    'd4:c9:3b': 'LG Electronics',
+    
+    // Sony (PlayStation / Bravia TV)
+    '00:13:15': 'Sony Corporation',
+    '00:1d:ba': 'Sony Corporation',
+    '70:9e:29': 'Sony Interactive Ent.',
+    'bc:60:a7': 'Sony Interactive Ent.',
+    
+    // TP-Link
+    '50:c7:bf': 'TP-Link Technologies',
+    'ec:08:6b': 'TP-Link Technologies',
+    '98:de:d0': 'TP-Link Technologies',
+    
+    // HP / Dell / Lenovo / Intel / Realtek (PCs & Laptops)
+    '00:14:22': 'Dell Inc.',
+    'f8:ca:b8': 'Dell Inc.',
+    '70:54:b4': 'Hewlett Packard',
+    'e4:b3:18': 'Intel Corporate',
+    '00:28:f8': 'Intel Corporate',
+    'a4:4e:31': 'Lenovo Mobile',
+    'ec:a8:6b': 'Realtek Semiconductor',
+    
+    // Ubiquiti
+    'd8:47:3c': 'Ubiquiti Networks',
+    '04:18:d6': 'Ubiquiti Networks',
+    'f0:9f:c2': 'Ubiquiti Networks',
+  };
+
+  const getMacVendor = (mac) => {
+    if (!mac || mac === '-') return 'Desconocido';
+    const cleanMac = mac.toLowerCase().replace(/[-]/g, ':');
+    const oui = cleanMac.split(':').slice(0, 3).join(':');
+    return macOUIs[oui] || 'Dispositivo Genérico';
   };
 
   const resolveIp = async (ip) => {
@@ -99,8 +191,13 @@ export default function NetworkMonitor() {
 
   useEffect(() => {
     fetchData(true);
+    fetchSecurityData();
     const interval = setInterval(() => fetchData(false), 5000); // Poll connections quietly every 5s
-    return () => clearInterval(interval);
+    const secInterval = setInterval(() => fetchSecurityData(), 15000); // Poll security every 15s
+    return () => {
+      clearInterval(interval);
+      clearInterval(secInterval);
+    };
   }, []);
 
   const isExternal = (c) => {
@@ -115,6 +212,16 @@ export default function NetworkMonitor() {
       ip.startsWith('10.') ||
       (ip.startsWith('172.') && parseInt(ip.split('.')[1]) >= 16 && parseInt(ip.split('.')[1]) <= 31)
     );
+  };
+
+  const isDangerousPort = (c) => {
+    if (c.state !== 'LISTEN') return false;
+    const isPublic = c.localIp === '0.0.0.0' || c.localIp === '*' || c.localIp === '[::]';
+    if (!isPublic) return false;
+    
+    // Lista de puertos sensibles que NO deberían estar públicos (Postgres, MySQL, Mongo, Redis, etc)
+    const sensitivePorts = ['5432', '3306', '27017', '6379'];
+    return sensitivePorts.includes(c.localPort);
   };
 
   // Filter connections
@@ -242,6 +349,91 @@ export default function NetworkMonitor() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Security Audit */}
+      <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldAlert size={20} color="var(--color-danger)" />
+            Auditoría de Seguridad
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Análisis de vulnerabilidades, protección y ataques recientes</p>
+        </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+          {/* UFW Firewall */}
+          <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600 }}>Firewall UFW</span>
+            {securityData.ufw === 'active' ? (
+              <span className="status-badge success" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,230,118,0.1)', color: 'var(--color-success)' }}>
+                ACTIVO Y PROTEGIENDO
+              </span>
+            ) : (
+              <span className="status-badge danger" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                INACTIVO (Riesgo de Seguridad)
+              </span>
+            )}
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>El Firewall UFW controla el acceso a los puertos del sistema operativo.</p>
+          </div>
+
+          {/* Fail2ban */}
+          <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600 }}>Protección Fail2ban</span>
+            {securityData.fail2ban === 'installed' ? (
+              <span className="status-badge success" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,230,118,0.1)', color: 'var(--color-success)' }}>
+                INSTALADO
+              </span>
+            ) : (
+              <span className="status-badge warning" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(255,145,0,0.1)', color: '#FF9100' }}>
+                NO INSTALADO
+              </span>
+            )}
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Fail2ban bloquea automáticamente las IPs que intentan ingresar contraseñas por fuerza bruta.</p>
+          </div>
+
+          {/* SSH Attacks */}
+          <div className="glass-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600 }}>Intentos Fallidos SSH (24hs)</span>
+            {!securityData.sshAttacks || securityData.sshAttacks.length === 0 ? (
+              <span className="status-badge success" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(0,230,118,0.1)', color: 'var(--color-success)' }}>
+                SIN ATAQUES RECIENTES
+              </span>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span className="status-badge danger" style={{ alignSelf: 'flex-start', fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                  {securityData.sshAttacks.reduce((sum, a) => sum + a.count, 0)} INTENTOS DE ACCESO
+                </span>
+                <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Principales Orígenes:</span>
+                  {securityData.sshAttacks.slice(0, 5).map((atk, idx) => {
+                    const parts = atk.ip.split('.').map(Number);
+                    const isLocal = parts.length === 4 && (
+                      parts[0] === 127 || 
+                      parts[0] === 10 || 
+                      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+                      (parts[0] === 192 && parts[1] === 168)
+                    );
+                    const isTailscale = parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+                    const typeLabel = isLocal ? 'Local' : isTailscale ? 'VPN' : 'Internet';
+                    const typeColor = isLocal ? '#90A4AE' : isTailscale ? '#00B0FF' : 'var(--color-danger)';
+                    return (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'var(--font-mono)' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {atk.ip}
+                          <span style={{ fontSize: '0.6rem', padding: '0 4px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)', color: typeColor, border: `1px solid ${typeColor}` }}>
+                            {typeLabel}
+                          </span>
+                        </span>
+                        <span style={{ color: 'var(--color-danger)' }}>{atk.count} fallos</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -444,6 +636,11 @@ export default function NetworkMonitor() {
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
                         {c.localIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.localPort}</span>
+                        {isDangerousPort(c) && (
+                          <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }} title="Servicio de base de datos expuesto públicamente">
+                            ⚠️ PELIGRO: PUERTO PÚBLICO
+                          </span>
+                        )}
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
                         <div>
@@ -560,6 +757,7 @@ export default function NetworkMonitor() {
                 <tr>
                   <th>Dirección IP</th>
                   <th>Dirección MAC (Física)</th>
+                  <th>Tipo / Fabricante</th>
                   <th>Interfaz de Enlace</th>
                   <th>Estado ARP</th>
                 </tr>
@@ -576,6 +774,9 @@ export default function NetworkMonitor() {
                     <tr key={idx}>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{n.ip}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{n.mac}</td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {getMacVendor(n.mac)}
+                      </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{n.dev}</td>
                       <td>
                         <span className={`status-badge`} style={{ 

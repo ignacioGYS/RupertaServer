@@ -1199,6 +1199,58 @@ app.get('/api/network/connections', async (req, res) => {
   }
 });
 
+// 17b. Security Audit API
+app.get('/api/network/security', async (req, res) => {
+  try {
+    const command = [
+      `echo "===UFW==="`,
+      `systemctl is-active ufw 2>/dev/null || echo "inactive"`,
+      `echo "===FAIL2BAN==="`,
+      `if command -v fail2ban-client >/dev/null; then echo "installed"; else echo "not_installed"; fi`,
+      `echo "===SSH_FAILED==="`,
+      `journalctl -u ssh -n 5000 --no-pager 2>/dev/null | grep "Failed password" | grep -oP "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+" | sort | uniq -c | sort -nr | head -n 10 || echo "NONE"`
+    ].join(' ; ');
+
+    const output = await sshManager.exec(command);
+    const sections = {};
+    let currentSection = null;
+
+    output.split('\n').forEach(line => {
+      if (line.startsWith('===') && line.endsWith('===')) {
+        currentSection = line.replace(/===/g, '');
+        sections[currentSection] = [];
+      } else if (currentSection && line.trim() !== '') {
+        sections[currentSection].push(line);
+      }
+    });
+
+    const ufwStatus = sections['UFW']?.[0]?.trim() || 'inactive';
+    const fail2banStatus = sections['FAIL2BAN']?.[0]?.trim() || 'not_installed';
+    
+    const sshFailed = [];
+    if (sections['SSH_FAILED']) {
+      sections['SSH_FAILED'].forEach(line => {
+        if (line.trim() === 'NONE') return;
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          sshFailed.push({
+            count: parseInt(parts[0], 10),
+            ip: parts[1]
+          });
+        }
+      });
+    }
+
+    res.json({
+      ufw: ufwStatus,
+      fail2ban: fail2banStatus,
+      sshAttacks: sshFailed
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 18. Trigger Network Ping Sweep/Scan API
 app.post('/api/network/scan', async (req, res) => {
   try {
