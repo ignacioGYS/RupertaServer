@@ -323,11 +323,25 @@ export default function NetworkMonitor() {
                         <td style={{ fontFamily: 'var(--font-mono)' }}>
                           <div>
                             {auth.from}
-                            {external && (
-                              <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
-                                EXTERNO
-                              </span>
-                            )}
+                            {(() => {
+                              const parts = auth.from.split('.').map(Number);
+                              const isTailscale = parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+                              if (isTailscale) {
+                                return (
+                                  <span className="status-badge info" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,176,255,0.1)', color: '#00B0FF' }}>
+                                    VPN TAILSCALE
+                                  </span>
+                                );
+                              }
+                              if (external) {
+                                return (
+                                  <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                                    EXTERNO
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                           {resolvedIps[auth.from] && !resolvedIps[auth.from].loading && !resolvedIps[auth.from].error && (
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -434,11 +448,25 @@ export default function NetworkMonitor() {
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
                         <div>
                           {c.peerIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.peerPort}</span>
-                          {isExternal(c) && (
-                            <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
-                              EXTERNA
-                            </span>
-                          )}
+                          {(() => {
+                            const parts = c.peerIp.split('.').map(Number);
+                            const isTailscale = parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+                            if (isTailscale) {
+                              return (
+                                <span className="status-badge info" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0,176,255,0.1)', color: '#00B0FF' }}>
+                                  VPN TAILSCALE
+                                </span>
+                              );
+                            }
+                            if (isExternal(c)) {
+                              return (
+                                <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                                  EXTERNA
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                         {resolvedIps[c.peerIp] && !resolvedIps[c.peerIp].loading && !resolvedIps[c.peerIp].error && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>

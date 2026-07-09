@@ -903,6 +903,44 @@ app.get('/api/network/resolve-ip', async (req, res) => {
     return res.json(ipResolveCache.get(ip));
   }
 
+  // Helper to check if IP is in the Tailscale CGNAT range (100.64.0.0/10)
+  const parts = ip.split('.').map(Number);
+  const isTailscale = parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+
+  if (isTailscale) {
+    try {
+      const statusOut = await sshManager.exec('tailscale status 2>/dev/null || sudo tailscale status 2>/dev/null');
+      const lines = statusOut.split('\n');
+      let deviceName = '';
+      let deviceOS = '';
+      let userMail = '';
+      
+      for (const line of lines) {
+        const lineParts = line.trim().split(/\s+/);
+        if (lineParts.length >= 4 && lineParts[0] === ip) {
+          deviceName = lineParts[1];
+          userMail = lineParts[2];
+          deviceOS = lineParts[3];
+          break;
+        }
+      }
+      
+      if (deviceName) {
+        const result = {
+          ip,
+          country: 'Red VPN Privada',
+          city: 'Tailscale',
+          org: `Dispositivo VPN (${deviceOS})`,
+          hostname: `${deviceName} (${userMail})`
+        };
+        ipResolveCache.set(ip, result);
+        return res.json(result);
+      }
+    } catch (e) {
+      console.error('[Tailscale resolve] Error:', e.message);
+    }
+  }
+
   try {
     const response = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,city,org,isp`);
     const data = await response.json();
