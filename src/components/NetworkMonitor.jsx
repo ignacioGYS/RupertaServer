@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle } from 'lucide-react';
+import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X } from 'lucide-react';
 
 export default function NetworkMonitor() {
   const [data, setData] = useState({
@@ -15,6 +15,10 @@ export default function NetworkMonitor() {
     sshAttacks: []
   });
   const [resolvedIps, setResolvedIps] = useState({});
+  const [editingMac, setEditingMac] = useState(null);
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [scanningPortsIp, setScanningPortsIp] = useState(null);
+  const [scannedPorts, setScannedPorts] = useState({});
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
@@ -143,6 +147,71 @@ export default function NetworkMonitor() {
     const cleanMac = mac.toLowerCase().replace(/[-]/g, ':');
     const oui = cleanMac.split(':').slice(0, 3).join(':');
     return macOUIs[oui] || 'Dispositivo Genérico';
+  };
+
+  const getDeviceCategory = (mac) => {
+    if (!mac || mac === '-') return { label: 'Dispositivo Genérico', icon: <HelpCircle size={16} color="var(--text-secondary)" /> };
+    const cleanMac = mac.toLowerCase().replace(/[-]/g, ':');
+    const oui = cleanMac.split(':').slice(0, 3).join(':');
+    const vendor = macOUIs[oui] || '';
+    
+    if (vendor.includes('Wiz') || vendor.includes('Espressif')) {
+      return { label: 'Domótica / Wiz', icon: <Lightbulb size={16} color="#FFD600" /> };
+    }
+    if (vendor.includes('Samsung') || vendor.includes('LG') || vendor.includes('Sony')) {
+      return { label: 'Smart TV / Consola', icon: <Tv size={16} color="#2979FF" /> };
+    }
+    if (vendor.includes('Apple') || vendor.includes('Lenovo Mobile') || vendor.includes('Xiaomi')) {
+      return { label: 'Smartphone / Tablet', icon: <Smartphone size={16} color="#00E676" /> };
+    }
+    if (vendor.includes('Raspberry') || vendor.includes('Synology')) {
+      return { label: 'Servidor / Mini PC', icon: <Server size={16} color="#E040FB" /> };
+    }
+    if (vendor.includes('TP-Link') || vendor.includes('Ubiquiti') || vendor.includes('Netgear')) {
+      return { label: 'Red (Router/AP)', icon: <Wifi size={16} color="#00B0FF" /> };
+    }
+    if (vendor.includes('Dell') || vendor.includes('HP') || vendor.includes('Intel') || vendor.includes('Realtek')) {
+      return { label: 'Computadora / PC', icon: <Laptop size={16} color="#ECEFF1" /> };
+    }
+    return { label: 'Dispositivo Genérico', icon: <HelpCircle size={16} color="var(--text-secondary)" /> };
+  };
+
+  const handleSaveNickname = async (mac) => {
+    try {
+      const res = await fetch('/api/network/device-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac, name: nicknameInput })
+      });
+      if (res.ok) {
+        setData(prev => ({
+          ...prev,
+          neighbors: prev.neighbors.map(n => n.mac === mac ? { ...n, customName: nicknameInput } : n)
+        }));
+        setEditingMac(null);
+      }
+    } catch (e) {
+      console.error('Error saving nickname:', e);
+    }
+  };
+
+  const handleScanPorts = async (ip) => {
+    setScanningPortsIp(ip);
+    try {
+      const res = await fetch('/api/network/scan-ports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setScannedPorts(prev => ({ ...prev, [ip]: json.ports }));
+      }
+    } catch (e) {
+      console.error('Error scanning ports:', e);
+    } finally {
+      setScanningPortsIp(null);
+    }
   };
 
   const resolveIp = async (ip) => {
@@ -755,42 +824,175 @@ export default function NetworkMonitor() {
             <table className="custom-table">
               <thead>
                 <tr>
-                  <th>Dirección IP</th>
+                  <th>Dirección IP / Nombre</th>
                   <th>Dirección MAC (Física)</th>
                   <th>Tipo / Fabricante</th>
-                  <th>Interfaz de Enlace</th>
-                  <th>Estado ARP</th>
+                  <th>Interfaz</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredNeighbors.length === 0 ? (
                   <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                       {scanning ? 'Escaneo en curso...' : 'No se encontraron dispositivos en la red. Intenta realizar un Escaneo de Red.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredNeighbors.map((n, idx) => (
-                    <tr key={idx}>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{n.ip}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{n.mac}</td>
-                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {getMacVendor(n.mac)}
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{n.dev}</td>
-                      <td>
-                        <span className={`status-badge`} style={{ 
-                          fontSize: '0.7rem', 
-                          padding: '2px 6px',
-                          background: n.state === 'REACHABLE' || n.state === 'ACTIVE' ? 'rgba(0,230,118,0.1)' : 'rgba(255,255,255,0.05)',
-                          color: n.state === 'REACHABLE' || n.state === 'ACTIVE' ? 'var(--color-success)' : 'var(--text-secondary)',
-                          borderRadius: '4px'
-                        }}>
-                          {n.state}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                  filteredNeighbors.map((n, idx) => {
+                    const category = getDeviceCategory(n.mac);
+                    const ports = scannedPorts[n.ip];
+                    return (
+                      <React.Fragment key={idx}>
+                        <tr style={{ background: ports ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{n.ip}</span>
+                              {editingMac === n.mac ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                  <input 
+                                    type="text" 
+                                    className="form-input" 
+                                    style={{ padding: '2px 6px', fontSize: '0.75rem', width: '130px' }}
+                                    value={nicknameInput}
+                                    onChange={(e) => setNicknameInput(e.target.value)}
+                                    placeholder="Nombre amigable..."
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') handleSaveNickname(n.mac);
+                                      if (e.key === 'Escape') setEditingMac(null);
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button onClick={() => handleSaveNickname(n.mac)} style={{ color: 'var(--color-success)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}>
+                                    <Check size={14} />
+                                  </button>
+                                  <button onClick={() => setEditingMac(null)} style={{ color: 'var(--color-danger)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}>
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '0.8rem', color: n.customName ? 'var(--color-secondary)' : 'var(--text-muted)' }}>
+                                  <span>{n.customName || 'Sin apodo'}</span>
+                                  <button 
+                                    onClick={() => {
+                                      setEditingMac(n.mac);
+                                      setNicknameInput(n.customName || '');
+                                    }} 
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: '2px' }}
+                                    title="Editar apodo"
+                                  >
+                                    <Edit2 size={10} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{n.mac}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+                              {category.icon}
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontWeight: 500 }}>{getMacVendor(n.mac)}</span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{category.label}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{n.dev}</td>
+                          <td>
+                            <span className={`status-badge`} style={{ 
+                              fontSize: '0.7rem', 
+                              padding: '2px 6px',
+                              background: n.state === 'REACHABLE' || n.state === 'ACTIVE' ? 'rgba(0,230,118,0.1)' : 'rgba(255,255,255,0.05)',
+                              color: n.state === 'REACHABLE' || n.state === 'ACTIVE' ? 'var(--color-success)' : 'var(--text-secondary)',
+                              borderRadius: '4px'
+                            }}>
+                              {n.state}
+                            </span>
+                          </td>
+                          <td>
+                            <button 
+                              className="btn btn-secondary btn-icon"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => handleScanPorts(n.ip)}
+                              disabled={scanningPortsIp === n.ip}
+                            >
+                              {scanningPortsIp === n.ip ? (
+                                <div className="spinner" style={{ width: '10px', height: '10px', borderWidth: '1.5px' }}></div>
+                              ) : (
+                                <Eye size={12} />
+                              )}
+                              <span>Puertos</span>
+                            </button>
+                          </td>
+                        </tr>
+                        {ports && (
+                          <tr>
+                            <td colSpan="6" style={{ background: 'rgba(0,0,0,0.2)', padding: '12px 24px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                    Puertos Escaneados en {n.ip}:
+                                  </span>
+                                  <button 
+                                    onClick={() => setScannedPorts(prev => {
+                                      const copy = { ...prev };
+                                      delete copy[n.ip];
+                                      return copy;
+                                    })} 
+                                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer' }}
+                                  >
+                                    Cerrar panel
+                                  </button>
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                                  {ports.map(p => {
+                                    const portNames = {
+                                      22: 'SSH',
+                                      80: 'HTTP',
+                                      443: 'HTTPS',
+                                      8123: 'Home Assistant',
+                                      3000: 'Vite/Node',
+                                      32400: 'Plex',
+                                      5432: 'Postgres',
+                                      8080: 'Web Alt'
+                                    };
+                                    return (
+                                      <div 
+                                        key={p.port}
+                                        style={{ 
+                                          padding: '4px 10px', 
+                                          borderRadius: '6px', 
+                                          background: p.status === 'open' ? 'rgba(0, 230, 118, 0.08)' : 'rgba(255,255,255,0.02)',
+                                          border: p.status === 'open' ? '1px solid rgba(0, 230, 118, 0.2)' : '1px solid rgba(255,255,255,0.05)',
+                                          fontSize: '0.75rem',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '6px',
+                                          color: p.status === 'open' ? 'var(--color-success)' : 'var(--text-muted)'
+                                        }}
+                                      >
+                                        <span style={{ fontWeight: 600 }}>{p.port}</span>
+                                        <span>({portNames[p.port] || 'Servicio'})</span>
+                                        <span style={{ 
+                                          width: '6px', 
+                                          height: '6px', 
+                                          borderRadius: '50%', 
+                                          background: p.status === 'open' ? 'var(--color-success)' : 'transparent',
+                                          border: p.status === 'open' ? 'none' : '1px solid var(--text-muted)'
+                                        }}></span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
                 )}
               </tbody>
             </table>

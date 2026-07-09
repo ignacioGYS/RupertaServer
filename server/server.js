@@ -4,6 +4,7 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
+import net from 'net';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import busboy from 'busboy';
@@ -988,6 +989,17 @@ app.get('/api/network/connections', async (req, res) => {
 
     const output = await sshManager.exec(command);
     
+    // Fetch custom nicknames from DB
+    let nicknamesMap = {};
+    try {
+      const dbResult = await query(`SELECT mac, custom_name FROM local_devices`);
+      dbResult.rows.forEach(row => {
+        nicknamesMap[row.mac.toLowerCase()] = row.custom_name;
+      });
+    } catch (e) {
+      console.error('[DB] Error fetching local device nicknames:', e.message);
+    }
+    
     // Parser helper for SSH sections
     const parseSections = (txt) => {
       const sections = {};
@@ -1165,7 +1177,8 @@ app.get('/api/network/connections', async (req, res) => {
         }
         
         if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
-          neighbors.push({ ip, mac, dev, state });
+          const customName = nicknamesMap[mac.toLowerCase()] || '';
+          neighbors.push({ ip, mac, dev, state, customName });
         }
       }
     });
@@ -1246,6 +1259,68 @@ app.get('/api/network/security', async (req, res) => {
       fail2ban: fail2banStatus,
       sshAttacks: sshFailed
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17c. Save/Update Device Nickname
+app.post('/api/network/device-name', async (req, res) => {
+  const { mac, name } = req.body;
+  if (!mac || !name) return res.status(400).json({ error: 'MAC and Name are required' });
+  try {
+    await query(
+      `INSERT INTO local_devices (mac, custom_name, updated_at) 
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (mac) 
+       DO UPDATE SET custom_name = EXCLUDED.custom_name, updated_at = CURRENT_TIMESTAMP`,
+      [mac.toLowerCase(), name]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17d. Scan local device ports
+app.post('/api/network/scan-ports', async (req, res) => {
+  const { ip } = req.body;
+  if (!ip) return res.status(400).json({ error: 'IP is required' });
+
+  const portsToCheck = [22, 80, 443, 8123, 3000, 32400, 5432, 8080];
+  const results = [];
+
+  const checkPort = (port) => {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(600); // 600ms timeout
+      
+      socket.on('connect', () => {
+        results.push({ port, status: 'open' });
+        socket.destroy();
+        resolve();
+      });
+      
+      socket.on('timeout', () => {
+        results.push({ port, status: 'closed' });
+        socket.destroy();
+        resolve();
+      });
+      
+      socket.on('error', () => {
+        results.push({ port, status: 'closed' });
+        socket.destroy();
+        resolve();
+      });
+      
+      socket.connect(port, ip);
+    });
+  };
+
+  try {
+    await Promise.all(portsToCheck.map(checkPort));
+    results.sort((a, b) => a.port - b.port);
+    res.json({ ip, ports: results });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

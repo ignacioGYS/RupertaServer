@@ -49,6 +49,15 @@ export const initializeDb = async () => {
     await query(`CREATE INDEX IF NOT EXISTS idx_gpu_metrics_time ON gpu_metrics (timestamp)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_gpu_metrics_name ON gpu_metrics (gpu_name)`);
 
+    // Local devices nicknames table
+    await query(`
+      CREATE TABLE IF NOT EXISTS local_devices (
+        mac VARCHAR(17) PRIMARY KEY,
+        custom_name VARCHAR(255) NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('✅ Base de datos PostgreSQL lista y conectada.');
   } catch (error) {
     console.error('❌ Error conectando o inicializando PostgreSQL:', error.message);
