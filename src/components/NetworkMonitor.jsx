@@ -9,6 +9,7 @@ export default function NetworkMonitor() {
     neighbors: [],
     authHistory: []
   });
+  const [resolvedIps, setResolvedIps] = useState({});
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
@@ -51,6 +52,50 @@ export default function NetworkMonitor() {
       setScanning(false);
     }
   };
+
+  const resolveIp = async (ip) => {
+    if (!ip || resolvedIps[ip] || ip.includes('127.0.0.1') || ip.includes('Local') || ip.startsWith('192.168.') || ip.startsWith('10.') || ip === '*' || ip.includes('Todos')) return;
+    
+    // Set a placeholder to avoid double fetching
+    setResolvedIps(prev => ({ ...prev, [ip]: { loading: true } }));
+    
+    try {
+      const res = await fetch(`/api/network/resolve-ip?ip=${encodeURIComponent(ip)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setResolvedIps(prev => ({ ...prev, [ip]: data }));
+      } else {
+        setResolvedIps(prev => ({ ...prev, [ip]: { error: true } }));
+      }
+    } catch (e) {
+      setResolvedIps(prev => ({ ...prev, [ip]: { error: true } }));
+    }
+  };
+
+  useEffect(() => {
+    // Gather all unique external IPs
+    const ipsToResolve = new Set();
+    data.connections.forEach(c => {
+      if (isExternal(c) && c.peerIp && c.peerIp !== '-' && c.peerIp !== 'Unknown') {
+        ipsToResolve.add(c.peerIp);
+      }
+    });
+    
+    if (data.authHistory) {
+      data.authHistory.forEach(h => {
+        const isExt = !(h.from.includes('127.0.0.1') || h.from.includes('Local') || h.from.startsWith('192.168.') || h.from.startsWith('10.') || (h.from.startsWith('172.') && parseInt(h.from.split('.')[1]) >= 16 && parseInt(h.from.split('.')[1]) <= 31));
+        if (isExt && h.from && h.from !== '-' && h.from !== 'Unknown') {
+          ipsToResolve.add(h.from);
+        }
+      });
+    }
+
+    ipsToResolve.forEach(ip => {
+      if (!resolvedIps[ip]) {
+        resolveIp(ip);
+      }
+    });
+  }, [data.connections, data.authHistory]);
 
   useEffect(() => {
     fetchData(true);
@@ -276,11 +321,19 @@ export default function NetworkMonitor() {
                         <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{auth.user}</td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{auth.tty}</td>
                         <td style={{ fontFamily: 'var(--font-mono)' }}>
-                          {auth.from}
-                          {external && (
-                            <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
-                              EXTERNO
-                            </span>
+                          <div>
+                            {auth.from}
+                            {external && (
+                              <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                                EXTERNO
+                              </span>
+                            )}
+                          </div>
+                          {resolvedIps[auth.from] && !resolvedIps[auth.from].loading && !resolvedIps[auth.from].error && (
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span>🏢 {resolvedIps[auth.from].org}</span>
+                              <span style={{ fontSize: '0.7rem' }}>🌐 {resolvedIps[auth.from].hostname !== 'Desconocido' ? resolvedIps[auth.from].hostname : 'DNS Desconocido'} ({resolvedIps[auth.from].city}, {resolvedIps[auth.from].country})</span>
+                            </div>
                           )}
                         </td>
                         <td>{auth.time}</td>
@@ -379,11 +432,19 @@ export default function NetworkMonitor() {
                         {c.localIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.localPort}</span>
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
-                        {c.peerIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.peerPort}</span>
-                        {isExternal(c) && (
-                          <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
-                            EXTERNA
-                          </span>
+                        <div>
+                          {c.peerIp} : <span style={{ color: 'var(--color-secondary)' }}>{c.peerPort}</span>
+                          {isExternal(c) && (
+                            <span className="status-badge danger" style={{ marginLeft: '8px', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,23,68,0.1)', color: 'var(--color-danger)' }}>
+                              EXTERNA
+                            </span>
+                          )}
+                        </div>
+                        {resolvedIps[c.peerIp] && !resolvedIps[c.peerIp].loading && !resolvedIps[c.peerIp].error && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span>🏢 {resolvedIps[c.peerIp].org}</span>
+                            <span style={{ fontSize: '0.7rem' }}>🌐 {resolvedIps[c.peerIp].hostname !== 'Desconocido' ? resolvedIps[c.peerIp].hostname : 'DNS Desconocido'} ({resolvedIps[c.peerIp].city}, {resolvedIps[c.peerIp].country})</span>
+                          </div>
                         )}
                       </td>
                       <td>

@@ -3,6 +3,7 @@ import cors from 'cors';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import busboy from 'busboy';
@@ -889,6 +890,45 @@ done
     res.json(gpus);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 16b. Resolve IP (Reverse DNS & Geolocation)
+const ipResolveCache = new Map();
+app.get('/api/network/resolve-ip', async (req, res) => {
+  const { ip } = req.query;
+  if (!ip) return res.status(400).json({ error: 'IP is required' });
+
+  if (ipResolveCache.has(ip)) {
+    return res.json(ipResolveCache.get(ip));
+  }
+
+  try {
+    const response = await fetch(`http://ip-api.com/json/${ip}?fields=status,message,country,city,org,isp`);
+    const data = await response.json();
+    
+    let hostname = 'Desconocido';
+    try {
+      const hostnames = await new Promise((resolve) => {
+        dns.reverse(ip, (err, h) => resolve(err ? [] : h));
+      });
+      if (hostnames && hostnames.length > 0) {
+        hostname = hostnames[0];
+      }
+    } catch (e) {}
+
+    const result = {
+      ip,
+      country: data.country || 'Desconocido',
+      city: data.city || 'Desconocido',
+      org: data.org || data.isp || 'Desconocido',
+      hostname
+    };
+
+    ipResolveCache.set(ip, result);
+    res.json(result);
+  } catch (err) {
+    res.json({ ip, country: 'Desconocido', city: 'Desconocido', org: 'Desconocido', hostname: 'Desconocido' });
   }
 });
 
