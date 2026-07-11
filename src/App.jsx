@@ -13,40 +13,25 @@ import NetworkMonitor from './components/NetworkMonitor';
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isConnected, setIsConnected] = useState(false);
+  const [mountedTabs, setMountedTabs] = useState(new Set(['dashboard']));
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Panel Control', icon: <Activity /> },
-    { id: 'docker', label: 'Contenedores Docker', icon: <Layers /> },
-    { id: 'processes', label: 'Procesos', icon: <Cpu /> },
-    { id: 'hardware', label: 'Hardware', icon: <HardwareIcon /> },
-    { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon /> },
-    { id: 'network', label: 'Red y Conexiones', icon: <Network /> },
-    { id: 'files', label: 'Archivos (SFTP)', icon: <Folder /> },
-    { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon /> }
-  ];
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'docker':
-        return <DockerManager />;
-      case 'processes':
-        return <ProcessManager />;
-      case 'hardware':
-        return <HardwareInfo />;
-      case 'gpu':
-        return <GpuMonitor />;
-      case 'network':
-        return <NetworkMonitor />;
-      case 'files':
-        return <FileExplorer />;
-      case 'terminal':
-        return <Terminal />;
-      default:
-        return <Dashboard />;
+  const handleTabChange = (id) => {
+    setActiveTab(id);
+    if (!mountedTabs.has(id)) {
+      setMountedTabs(new Set([...mountedTabs, id]));
     }
   };
+
+  const menuItems = [
+    { id: 'dashboard', label: 'Panel Control', icon: <Activity />, component: <Dashboard /> },
+    { id: 'docker', label: 'Contenedores Docker', icon: <Layers />, component: <DockerManager /> },
+    { id: 'processes', label: 'Procesos', icon: <Cpu />, component: <ProcessManager /> },
+    { id: 'hardware', label: 'Hardware', icon: <HardwareIcon />, component: <HardwareInfo /> },
+    { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon />, component: <GpuMonitor /> },
+    { id: 'network', label: 'Red y Conexiones', icon: <Network />, component: <NetworkMonitor /> },
+    { id: 'files', label: 'Archivos (SFTP)', icon: <Folder />, component: <FileExplorer /> },
+    { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon />, component: <Terminal /> }
+  ];
 
   const getViewTitleAndSubtitle = () => {
     switch (activeTab) {
@@ -90,7 +75,7 @@ function App() {
               <li key={item.id} className="nav-item">
                 <button
                   className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => handleTabChange(item.id)}
                   style={{ background: 'none', width: '100%', border: 'none', textAlign: 'left' }}
                 >
                   {item.icon}
@@ -128,7 +113,11 @@ function App() {
 
         {/* View Router */}
         <section style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-          {renderContent()}
+          {menuItems.map(item => (
+            <div key={item.id} style={{ display: activeTab === item.id ? 'flex' : 'none', flexDirection: 'column', flexGrow: 1 }}>
+              {mountedTabs.has(item.id) && item.component}
+            </div>
+          ))}
         </section>
       </main>
     </div>

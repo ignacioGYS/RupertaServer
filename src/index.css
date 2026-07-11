@@ -852,54 +852,68 @@ body {
   gap: 12px;
 }
 
-/* Logs Drawer overlay */
+/* Logs Drawer */
 .logs-drawer {
   position: fixed;
   top: 0;
   right: 0;
-  width: 650px;
+  width: min(720px, 92vw);
   height: 100vh;
   background: #080B11;
-  border-left: 1px solid var(--border-color);
-  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  border-left: 1px solid var(--border-color-active);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.7);
   z-index: 1500;
   display: flex;
   flex-direction: column;
-  padding: 24px;
+  padding: 20px 22px 16px;
   animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 .logs-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 16px;
+  padding-bottom: 14px;
 }
 
 .logs-header h3 {
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
 .logs-content {
   flex-grow: 1;
-  background: #04060b;
-  border-radius: 8px;
-  padding: 16px;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
+  background: #02040a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
   overflow-y: auto;
-  white-space: pre-wrap;
-  color: #e2e8f0;
+  color: #cbd5e0;
   border: 1px solid var(--border-color);
+  /* Crisp text rendering — eliminates blur/fuzz */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeSpeed;
+  font-variant-ligatures: none;
+}
+
+.logs-content table {
+  min-width: 100%;
 }
 
 .logs-actions {

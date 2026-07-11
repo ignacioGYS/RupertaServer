@@ -314,9 +314,57 @@ app.get('/api/docker/logs', async (req, res) => {
   }
 
   try {
-    // We run logs command. Since logs can be colored, we can keep the raw ansi formatting
-    const logs = await sshManager.exec(`docker logs --tail ${lines} ${name}`);
+    // We run logs with timestamps for better debugging context
+    const timestamps = req.query.timestamps === 'true';
+    const cmd = `docker logs --tail ${lines}${timestamps ? ' --timestamps' : ''} ${name} 2>&1`;
+    const logs = await sshManager.exec(cmd);
     res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. Docker Container Inspect API
+app.get('/api/docker/inspect', async (req, res) => {
+  const { name } = req.query;
+  if (!name) {
+    return res.status(400).json({ error: 'Container name is required' });
+  }
+  try {
+    const output = await sshManager.exec(
+      `docker inspect ${name} --format '{{json .}}'`
+    );
+    const data = JSON.parse(output.trim());
+    const info = {
+      id: data.Id,
+      name: data.Name?.replace(/^\//, '') || name,
+      image: data.Config?.Image || '-',
+      imageId: data.Image || '-',
+      created: data.Created || '-',
+      status: data.State?.Status || '-',
+      startedAt: data.State?.StartedAt || '-',
+      finishedAt: data.State?.FinishedAt || '-',
+      restartCount: data.RestartCount ?? 0,
+      platform: data.Platform || '-',
+      driver: data.Driver || '-',
+      hostname: data.Config?.Hostname || '-',
+      ipAddress: data.NetworkSettings?.IPAddress || data.NetworkSettings?.Networks ? Object.values(data.NetworkSettings.Networks || {})[0]?.IPAddress || '-' : '-',
+      networks: Object.keys(data.NetworkSettings?.Networks || {}),
+      mounts: (data.Mounts || []).map(m => ({ type: m.Type, source: m.Source, destination: m.Destination, mode: m.Mode })),
+      envVars: (data.Config?.Env || []).filter(e => !e.toLowerCase().includes('password') && !e.toLowerCase().includes('secret') && !e.toLowerCase().includes('key')),
+      cmd: data.Config?.Cmd || [],
+      entrypoint: data.Config?.Entrypoint || [],
+      exposedPorts: Object.keys(data.Config?.ExposedPorts || {}),
+      portBindings: Object.entries(data.HostConfig?.PortBindings || {}).map(([k, v]) => ({ container: k, host: v?.[0]?.HostPort || '-' })),
+      labels: data.Config?.Labels || {},
+      pid: data.State?.Pid || 0,
+      exitCode: data.State?.ExitCode ?? 0,
+      oomKilled: data.State?.OOMKilled || false,
+      memoryLimit: data.HostConfig?.Memory || 0,
+      cpuShares: data.HostConfig?.CpuShares || 0,
+      logDriver: data.HostConfig?.LogConfig?.Type || '-',
+    };
+    res.json(info);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
