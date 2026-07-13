@@ -7,6 +7,7 @@ import {
   Music, Database, Package, Loader2
 } from 'lucide-react';
 import { formatBytes } from '../utils/formatters';
+import { useUploads } from '../context/UploadContext';
 
 const QUICK_ACCESS = [
   { label: 'Raíz',     path: '/',        icon: <HardDrive size={14} /> },
@@ -82,8 +83,8 @@ export default function FileExplorer() {
   const [renaming, setRenaming]         = useState({ active: false, name: '', original: '' });
   const [editor, setEditor]             = useState({ open: false, filePath: '', fileName: '', content: '', saving: false, loading: false });
   const [deleteModal, setDeleteModal]   = useState({ open: false, paths: [], names: [] });
-  const [uploads, setUploads]           = useState([]);
   const [dragOver, setDragOver]         = useState(false);
+  const { addUploads, updateUpload, removeUploads } = useUploads();
   const [createModal, setCreateModal]   = useState({ open: false, type: null, value: '' });
 
   const fileInputRef    = useRef(null);
@@ -424,33 +425,33 @@ export default function FileExplorer() {
     const newUploads = entries.map((e, i) => ({
       id: `up-${ts}-${i}`,
       name: e.relPath,
+      destPath: currentPath.endsWith('/')
+        ? `${currentPath}${e.relPath}`
+        : `${currentPath}/${e.relPath}`,
       progress: 0,
       status: 'uploading'
     }));
-    setUploads(prev => [...prev, ...newUploads]);
+    addUploads(newUploads);
 
     let anyOk = false;
     for (let i = 0; i < entries.length; i++) {
       const { file, relPath } = entries[i];
       const uid = newUploads[i].id;
-      const destFullPath = currentPath.endsWith('/')
-        ? `${currentPath}${relPath}`
-        : `${currentPath}/${relPath}`;
+      const destFullPath = newUploads[i].destPath;
       try {
         await uploadSingleFile(file, destFullPath, (pct) =>
-          setUploads(prev => prev.map(u => u.id === uid ? { ...u, progress: pct } : u))
+          updateUpload(uid, { progress: pct })
         );
-        setUploads(prev => prev.map(u => u.id === uid ? { ...u, progress: 100, status: 'done' } : u));
+        updateUpload(uid, { progress: 100, status: 'done' });
         anyOk = true;
       } catch (err) {
-        setUploads(prev => prev.map(u => u.id === uid ? { ...u, status: 'error', errorMsg: err.message } : u));
+        updateUpload(uid, { status: 'error', errorMsg: err.message });
       }
     }
 
     if (anyOk) fetchDirectory(currentPath, false);
-    setTimeout(() => {
-      setUploads(prev => prev.filter(u => !newUploads.find(n => n.id === u.id)));
-    }, 4000);
+    const ids = newUploads.map(u => u.id);
+    setTimeout(() => removeUploads(ids), 5000);
   };
 
   // Simple flat-file upload (from <input type="file">)
@@ -770,28 +771,7 @@ export default function FileExplorer() {
         <span className="fe-status-path">{currentPath}</span>
       </div>
 
-      {/* Upload panel */}
-      {uploads.length > 0 && (
-        <div className="fe-upload-panel">
-          <div className="fe-upload-header"><Upload size={13} /><span>Subiendo archivos</span></div>
-          {uploads.map(u => (
-            <div key={u.id} className="fe-upload-item">
-              <div className="fe-upload-meta">
-                <span className="fe-upload-name">{u.name}</span>
-                {u.status === 'done' && <Check size={13} className="fe-upload-ok" />}
-                {u.status === 'error' && <X size={13} className="fe-upload-err" title={u.errorMsg} />}
-                {u.status === 'uploading' && <span className="fe-upload-pct">{u.progress}%</span>}
-              </div>
-              {u.status === 'error' && u.errorMsg && (
-                <div className="fe-upload-error-msg">{u.errorMsg}</div>
-              )}
-              <div className="fe-upload-bar">
-                <div className={`fe-upload-fill ${u.status}`} style={{ width: `${u.progress}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Upload panel is now global — rendered in App.jsx */}
 
       {/* Context Menu */}
       {ctxMenu.visible && (
