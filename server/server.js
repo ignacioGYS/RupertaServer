@@ -1232,6 +1232,24 @@ app.get('/api/network/connections', async (req, res) => {
       }
     });
 
+    // Add the server's own interfaces to the neighbors list so it shows up in the UI
+    interfaces.forEach(iface => {
+      if (iface.ip && iface.ip !== '-' && iface.ip !== '127.0.0.1' && iface.mac && iface.mac !== '-') {
+        // Check if not already in neighbors list
+        const exists = neighbors.some(n => n.ip === iface.ip);
+        if (!exists) {
+          const customName = nicknamesMap[iface.mac.toLowerCase()] || 'Este Servidor (RupertaServer)';
+          neighbors.push({
+            ip: iface.ip,
+            mac: iface.mac,
+            dev: iface.name,
+            state: 'ACTIVE',
+            customName
+          });
+        }
+      }
+    });
+
     // --- Parse Auth History ---
     const rawAuth = sections['AUTH_HISTORY'] || [];
     const authHistory = [];
@@ -1494,33 +1512,105 @@ app.post('/api/network/scan-ports', async (req, res) => {
 // 18. Trigger Network Ping Sweep/Scan API
 app.post('/api/network/scan', async (req, res) => {
   try {
-    const script = `
-      subnets=$(ip -o addr show | grep -v 'lo' | awk '{print $4}' | grep -E '^[0-9]')
-      for subnet in $subnets; do
-        if command -v nmap >/dev/null 2>&1; then
-          nmap -sn "$subnet" >/dev/null 2>&1
-        elif command -v arp-scan >/dev/null 2>&1; then
-          sudo -n arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1 || arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1
-        else
-          base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)
-          mask=$(echo $subnet | cut -d/ -f2)
-          if [ "$mask" = "24" ]; then
-            for i in {1..254}; do
-              ping -c 1 -w 1 "$base_ip.$i" >/dev/null 2>&1 &
-            done
-            wait
-          fi
-        fi
-      done
-      ip neigh show || arp -an || cat /proc/net/arp
-    `;
+    const script = [
+      `subnets=$(ip -o addr show | grep -v 'lo' | awk '{print $4}' | grep -E '^[0-9]')`,
+      `for subnet in $subnets; do`,
+      `  if command -v nmap >/dev/null 2>&1; then`,
+      `    nmap -sn "$subnet" >/dev/null 2>&1`,
+      `  elif command -v arp-scan >/dev/null 2>&1; then`,
+      `    sudo -n arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1 || arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1`,
+      `  else`,
+      `    base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)`,
+      `    mask=$(echo $subnet | cut -d/ -f2)`,
+      `    if [ "$mask" = "24" ]; then`,
+      `      for i in {1..254}; do`,
+      `        ping -c 1 -w 1 "$base_ip.$i" >/dev/null 2>&1 &`,
+      `      done`,
+      `      wait`,
+      `    fi`,
+      `  fi`,
+      `done`,
+      `echo "===NEIGHBORS==="`,
+      `ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"`,
+      `echo "===IFACES==="`,
+      `ip -o addr show 2>/dev/null || ifconfig 2>/dev/null || echo "NONE"`
+    ].join(' ; ');
 
     const output = await sshManager.exec(script);
     
+    // Fetch custom nicknames from DB
+    let nicknamesMap = {};
+    try {
+      const dbResult = await query(`SELECT mac, custom_name FROM local_devices`);
+      dbResult.rows.forEach(row => {
+        nicknamesMap[row.mac.toLowerCase()] = row.custom_name;
+      });
+    } catch (e) {
+      console.error('[DB] Error fetching local device nicknames:', e.message);
+    }
+
+    // Parse sections helper
+    const parseSections = (txt) => {
+      const sections = {};
+      let current = null;
+      for (const line of txt.split('\n')) {
+        const match = line.match(/^===([A-Z_]+)===$/);
+        if (match) {
+          current = match[1];
+          sections[current] = [];
+        } else if (current && line.trim()) {
+          sections[current].push(line);
+        }
+      }
+      return sections;
+    };
+
+    const sections = parseSections(output);
+
+    // Parse Interfaces
+    const rawIfaces = sections['IFACES'] || [];
+    const interfaces = [];
+    rawIfaces.forEach(line => {
+      if (line === 'NONE') return;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const name = parts[1];
+        const type = parts[2];
+        const addr = parts[3];
+        
+        if (type === 'inet' || type === 'inet6') {
+          const ip = addr.split('/')[0];
+          const subnet = addr;
+          
+          let existing = interfaces.find(i => i.name === name);
+          if (!existing) {
+            existing = { name, ip: '-', ipv6: '-', mac: '-', state: 'UP' };
+            interfaces.push(existing);
+          }
+          if (type === 'inet') {
+            existing.ip = ip;
+            existing.subnet = subnet;
+          } else {
+            existing.ipv6 = ip;
+          }
+        } else if (type === 'link/ether' || parts[2] === 'ether') {
+          const mac = parts[3];
+          let existing = interfaces.find(i => i.name === name);
+          if (!existing) {
+            existing = { name, ip: '-', ipv6: '-', mac, state: 'UP' };
+            interfaces.push(existing);
+          } else {
+            existing.mac = mac;
+          }
+        }
+      }
+    });
+
+    // Parse Neighbors
+    const rawNeighbors = sections['NEIGHBORS'] || [];
     const neighbors = [];
-    const lines = output.split('\n');
-    lines.forEach(line => {
-      if (line.startsWith('Address') || line.startsWith('IP address') || !line.trim()) return;
+    rawNeighbors.forEach(line => {
+      if (line === 'NONE' || line.startsWith('IP address') || line.startsWith('Address')) return;
       
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 1) {
@@ -1556,7 +1646,25 @@ app.post('/api/network/scan', async (req, res) => {
         }
         
         if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
-          neighbors.push({ ip, mac, dev, state });
+          const customName = nicknamesMap[mac.toLowerCase()] || '';
+          neighbors.push({ ip, mac, dev, state, customName });
+        }
+      }
+    });
+
+    // Add the server's own interfaces to the neighbors list
+    interfaces.forEach(iface => {
+      if (iface.ip && iface.ip !== '-' && iface.ip !== '127.0.0.1' && iface.mac && iface.mac !== '-') {
+        const exists = neighbors.some(n => n.ip === iface.ip);
+        if (!exists) {
+          const customName = nicknamesMap[iface.mac.toLowerCase()] || 'Este Servidor (RupertaServer)';
+          neighbors.push({
+            ip: iface.ip,
+            mac: iface.mac,
+            dev: iface.name,
+            state: 'ACTIVE',
+            customName
+          });
         }
       }
     });
