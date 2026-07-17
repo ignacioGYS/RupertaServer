@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
 import net from 'net';
+import dgram from 'dgram';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import busboy from 'busboy';
@@ -718,7 +719,7 @@ app.post('/api/sftp/upload', (req, res) => {
     return res.status(400).json({ error: 'Destination path required (x-dest-path header or ?path=)' });
   }
 
-  const bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024 * 1024 } }); // 10 GB
+  const bb = busboy({ headers: req.headers, limits: { fileSize: 100 * 1024 * 1024 * 1024 } }); // 100 GB
   const uploads = [];
 
   bb.on('file', (fieldname, fileStream, info) => {
@@ -763,7 +764,7 @@ app.post('/api/sftp/upload-single', (req, res) => {
     return res.status(400).json({ error: 'dest query param required' });
   }
 
-  const bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024 * 1024 } });
+  const bb = busboy({ headers: req.headers, limits: { fileSize: 100 * 1024 * 1024 * 1024 } }); // 100 GB
   let filePromise = null;
   let gotFile = false;
 
@@ -1330,6 +1331,122 @@ app.post('/api/network/device-name', async (req, res) => {
   }
 });
 
+// ── Wiz Smart Bulb Control (UDP port 38899) ─────────────────────────────────
+
+const wizUdp = (ip, payload, timeoutMs = 1200) => new Promise((resolve, reject) => {
+  const sock = dgram.createSocket('udp4');
+  const msg  = Buffer.from(JSON.stringify(payload));
+  let done   = false;
+
+  const finish = (err, data) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    sock.close();
+    if (err) reject(err); else resolve(data);
+  };
+
+  const timer = setTimeout(() => finish(new Error('Wiz timeout')), timeoutMs);
+
+  sock.on('message', (buf) => {
+    try { finish(null, JSON.parse(buf.toString())); }
+    catch (e) { finish(e); }
+  });
+  sock.on('error', (e) => finish(e));
+
+  sock.send(msg, 0, msg.length, 38899, ip, (err) => { if (err) finish(err); });
+});
+
+// GET /api/wiz/state?ip=192.168.x.x  — returns { state, brightness, temp }
+app.get('/api/wiz/state', async (req, res) => {
+  const { ip } = req.query;
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+  try {
+    const resp = await wizUdp(ip, { method: 'getPilot', params: {} });
+    const p = resp.result || {};
+    res.json({
+      state:      !!p.state,
+      brightness: p.dimming  ?? null,
+      temp:       p.temp     ?? null,
+      r: p.r ?? null, g: p.g ?? null, b: p.b ?? null
+    });
+  } catch (err) {
+    res.status(504).json({ error: err.message });
+  }
+});
+
+// POST /api/wiz/set  body: { ip, state: true|false }
+app.post('/api/wiz/set', async (req, res) => {
+  const { ip, state } = req.body;
+  if (!ip || state === undefined) return res.status(400).json({ error: 'ip and state required' });
+  try {
+    await wizUdp(ip, { method: 'setPilot', params: { state: !!state } });
+    res.json({ success: true, state: !!state });
+  } catch (err) {
+    res.status(504).json({ error: err.message });
+  }
+});
+
+// 17d-bis. Device identification: DNS reverse + HTTP banner (via SSH curl) + mDNS + nmap
+app.get('/api/network/identify', async (req, res) => {
+  const { ip } = req.query;
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+
+  const result = { ip, dns: null, http: null, https: null, mdns: null, nmap: null };
+
+  // 1. Reverse DNS (from local server)
+  const dnsLookup = new Promise(resolve => {
+    dns.reverse(ip, (err, hosts) => resolve(err ? null : (hosts[0] || null)));
+  });
+
+  // 2-3. HTTP/HTTPS banner via SSH curl (handles self-signed certs, LAN-only devices)
+  const curlHttp  = sshManager.exec(
+    `curl -sk --max-time 3 -L "http://${ip}/" | grep -oi '<title[^>]*>[^<]*</title>' | sed 's/<[^>]*>//g' | head -1 2>/dev/null`
+  ).catch(() => '');
+
+  const curlHttps = sshManager.exec(
+    `curl -sk --max-time 3 -L "https://${ip}/" | grep -oi '<title[^>]*>[^<]*</title>' | sed 's/<[^>]*>//g' | head -1 2>/dev/null`
+  ).catch(() => '');
+
+  // 4. mDNS via avahi-browse
+  const mdnsLookup = sshManager.exec(
+    `avahi-browse -a --terminate --resolve -p 2>/dev/null | grep -F ";${ip};" | head -10`
+  ).catch(() => '');
+
+  // 5. Nmap OS fingerprint (fast)
+  const nmapScan = sshManager.exec(
+    `nmap -O --osscan-guess -T4 -F ${ip} 2>/dev/null | grep -E 'OS guess|OS details|Running:|open/' | head -10`
+  ).catch(() => '');
+
+  const [dnsResult, httpRaw, httpsRaw, mdnsRaw, nmapRaw] = await Promise.all([
+    dnsLookup, curlHttp, curlHttps, mdnsLookup, nmapScan
+  ]);
+
+  result.dns   = dnsResult || null;
+  result.http  = httpRaw?.trim()  || null;
+  result.https = httpsRaw?.trim() || null;
+
+  // Parse mDNS lines (avahi -p format: event;interface;IPv4;name;type;domain;hostname;ip;port;txt)
+  if (mdnsRaw?.trim()) {
+    const services = mdnsRaw.trim().split('\n')
+      .filter(Boolean)
+      .map(l => {
+        const parts = l.split(';');
+        if (parts.length < 6) return null;
+        return { service: parts[4] || '', name: parts[3] || '', hostname: parts[6] || '' };
+      })
+      .filter(Boolean);
+    result.mdns = services.length ? services : null;
+  }
+
+  // Parse nmap lines
+  if (nmapRaw?.trim()) {
+    result.nmap = nmapRaw.trim().split('\n').map(l => l.trim()).filter(Boolean);
+  }
+
+  res.json(result);
+});
+
 // 17d. Scan local device ports
 app.post('/api/network/scan-ports', async (req, res) => {
   const { ip } = req.body;
@@ -1466,6 +1583,9 @@ if (fs.existsSync(distPath)) {
 
 // Create HTTP server & WS Server
 const server = http.createServer(app);
+// Disable timeouts for large file uploads (21 GB+)
+server.timeout = 0;          // No request timeout
+server.keepAliveTimeout = 0; // No keep-alive timeout
 const wss = new WebSocketServer({ noServer: true });
 
 // Handle upgrade from HTTP to WebSocket for /ws/terminal

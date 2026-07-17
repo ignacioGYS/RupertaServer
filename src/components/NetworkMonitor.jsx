@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X } from 'lucide-react';
+import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X, Zap } from 'lucide-react';
 
 export default function NetworkMonitor() {
   const [data, setData] = useState({
@@ -19,6 +19,8 @@ export default function NetworkMonitor() {
   const [nicknameInput, setNicknameInput] = useState('');
   const [scanningPortsIp, setScanningPortsIp] = useState(null);
   const [scannedPorts, setScannedPorts] = useState({});
+  const [wizStates, setWizStates] = useState({});
+  const [identifyData, setIdentifyData] = useState({});   // { [ip]: { loading, result, error } }
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
@@ -29,6 +31,7 @@ export default function NetworkMonitor() {
 
   // Search & Filter state for neighbors
   const [searchNeigh, setSearchNeigh] = useState('');
+  const [filterNeigh, setFilterNeigh] = useState('all'); // all, no-nickname, with-nickname
 
   const fetchData = async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -57,6 +60,54 @@ export default function NetworkMonitor() {
     }
   };
 
+  // Show Wiz switch if MAC suggests it OR if the device already responded to Wiz protocol
+  const isWizBulb = (mac, ip) => {
+    const vendor = getMacVendor(mac);
+    const byMac = vendor.includes('Wiz') || vendor.includes('Espressif');
+    const byProbe = wizStates[ip] && !wizStates[ip].error && wizStates[ip].state !== undefined;
+    return byMac || byProbe;
+  };
+
+  const fetchWizState = async (ip) => {
+    setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: true, error: null } }));
+    try {
+      const res = await fetch(`/api/wiz/state?ip=${encodeURIComponent(ip)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setWizStates(prev => ({ ...prev, [ip]: { state: data.state, brightness: data.brightness, loading: false, error: null } }));
+    } catch (e) {
+      setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: false, error: e.message } }));
+    }
+  };
+
+  const toggleWiz = async (ip, currentState) => {
+    setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: true } }));
+    try {
+      const res = await fetch('/api/wiz/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip, state: !currentState })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setWizStates(prev => ({ ...prev, [ip]: { state: !currentState, loading: false, error: null } }));
+    } catch (e) {
+      setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: false, error: e.message } }));
+    }
+  };
+
+  const handleIdentify = async (ip) => {
+    setIdentifyData(prev => ({ ...prev, [ip]: { loading: true, result: null, error: null } }));
+    try {
+      const res = await fetch(`/api/network/identify?ip=${encodeURIComponent(ip)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setIdentifyData(prev => ({ ...prev, [ip]: { loading: false, result: data, error: null } }));
+    } catch (e) {
+      setIdentifyData(prev => ({ ...prev, [ip]: { loading: false, result: null, error: e.message } }));
+    }
+  };
+
   const handleScan = async () => {
     setScanning(true);
     try {
@@ -75,12 +126,12 @@ export default function NetworkMonitor() {
   };
 
   const macOUIs = {
-    // Raspberry Pi
+    // ── Raspberry Pi ────────────────────────────────────────────
     'b8:27:eb': 'Raspberry Pi Foundation',
     'dc:a6:32': 'Raspberry Pi Trading',
     'e4:5f:01': 'Raspberry Pi Trading',
-    
-    // Espressif (Smart Home Wiz / Tuya / IoT)
+
+    // ── Espressif (Wiz / Tuya / IoT) ────────────────────────────
     'a8:bb:50': 'Espressif (Smart Bulb Wiz)',
     '24:a0:74': 'Espressif (Smart Devices)',
     'fc:db:b3': 'Espressif (Smart Devices)',
@@ -90,44 +141,69 @@ export default function NetworkMonitor() {
     '54:5a:a6': 'Espressif (Smart Devices)',
     'c0:49:ef': 'Espressif (Smart Devices)',
     'e8:db:84': 'Espressif (Smart Devices)',
-    
-    // Apple
+    '78:e3:6d': 'Espressif (Smart Devices)',
+    'bc:dd:c2': 'Espressif (Smart Devices)',
+    'cc:db:a7': 'Espressif (Smart Devices)',
+    'f4:cf:a2': 'Espressif (Smart Devices)',
+    'c8:c9:a3': 'Espressif (Smart Devices)',
+    '84:f7:03': 'Espressif (Smart Devices)',
+    '70:04:1d': 'Espressif (Smart Devices)',
+    '40:22:d8': 'Espressif (Smart Devices)',
+    '3c:61:05': 'Espressif (Smart Devices)',
+    '08:3a:f2': 'Espressif (Smart Devices)',
+    'ac:67:b2': 'Espressif (Smart Devices)',
+    '10:52:1c': 'Espressif (Smart Devices)',
+    '58:cf:79': 'Espressif (Smart Devices)',
+    '48:3f:da': 'Espressif (Smart Devices)',
+    'd8:bc:38': 'Espressif (Smart Devices)',
+
+    // ── Apple ────────────────────────────────────────────────────
     'd8:07:b6': 'Apple Inc.',
     '00:0d:93': 'Apple Inc.',
     '3c:15:c2': 'Apple Inc.',
     'f0:d1:a9': 'Apple Inc.',
     '04:26:65': 'Apple Inc.',
     '28:cf:da': 'Apple Inc.',
-    
-    // Google (Chromecast / Nest)
+    'ac:de:48': 'Apple Inc.',
+    'a4:83:e7': 'Apple Inc.',
+    '8c:85:90': 'Apple Inc.',
+
+    // ── Google / Nest / Chromecast ───────────────────────────────
     '00:1a:11': 'Google Inc.',
     'f4:f5:d8': 'Google Inc.',
     'da:a1:19': 'Google Inc.',
     '1c:5a:3e': 'Google Inc.',
-    
-    // Samsung (Smart TVs / Phones)
+    '54:60:09': 'Google (Chromecast)',
+    '6c:ad:f8': 'Google (Chromecast)',
+
+    // ── Samsung ──────────────────────────────────────────────────
     'ec:0e:c4': 'Samsung Electronics',
     '4c:bc:a8': 'Samsung Electronics',
     '00:07:ab': 'Samsung Electronics',
     'bc:72:b1': 'Samsung Electronics',
-    
-    // LG (Smart TVs)
+    '78:bd:bc': 'Samsung Electronics',
+    '8c:77:12': 'Samsung Electronics',
+
+    // ── LG ───────────────────────────────────────────────────────
     '00:e0:91': 'LG Electronics',
     '3c:cd:36': 'LG Electronics',
     'd4:c9:3b': 'LG Electronics',
-    
-    // Sony (PlayStation / Bravia TV)
+    'a8:23:fe': 'LG Electronics',
+
+    // ── Sony / PlayStation ────────────────────────────────────────
     '00:13:15': 'Sony Corporation',
     '00:1d:ba': 'Sony Corporation',
     '70:9e:29': 'Sony Interactive Ent.',
     'bc:60:a7': 'Sony Interactive Ent.',
-    
-    // TP-Link
+
+    // ── TP-Link ───────────────────────────────────────────────────
     '50:c7:bf': 'TP-Link Technologies',
     'ec:08:6b': 'TP-Link Technologies',
     '98:de:d0': 'TP-Link Technologies',
-    
-    // HP / Dell / Lenovo / Intel / Realtek (PCs & Laptops)
+    '14:eb:b6': 'TP-Link Technologies',
+    '50:3e:aa': 'TP-Link Technologies',
+
+    // ── PC / Laptops ──────────────────────────────────────────────
     '00:14:22': 'Dell Inc.',
     'f8:ca:b8': 'Dell Inc.',
     '70:54:b4': 'Hewlett Packard',
@@ -135,11 +211,96 @@ export default function NetworkMonitor() {
     '00:28:f8': 'Intel Corporate',
     'a4:4e:31': 'Lenovo Mobile',
     'ec:a8:6b': 'Realtek Semiconductor',
-    
-    // Ubiquiti
+
+    // ── Ubiquiti ──────────────────────────────────────────────────
     'd8:47:3c': 'Ubiquiti Networks',
     '04:18:d6': 'Ubiquiti Networks',
     'f0:9f:c2': 'Ubiquiti Networks',
+
+    // ── Xiaomi ───────────────────────────────────────────────────
+    'f4:f0:6e': 'Xiaomi Communications',
+    '28:6c:07': 'Xiaomi Communications',
+    '64:09:80': 'Xiaomi Communications',
+    '34:ce:00': 'Xiaomi Communications',
+    '78:11:dc': 'Xiaomi Communications',
+    'ac:c1:ee': 'Xiaomi Communications',
+    '58:44:98': 'Xiaomi Communications',
+    '50:64:2b': 'Xiaomi Communications',
+
+    // ── Roborock (Robot Vacuums) ──────────────────────────────────
+    'c4:ac:59': 'Roborock (Robot Vacuum)',
+    'f4:64:5d': 'Roborock (Robot Vacuum)',
+    '78:11:dc': 'Roborock (Robot Vacuum)',
+    '50:ec:50': 'Roborock (Robot Vacuum)',
+
+    // ── iRobot (Roomba) ───────────────────────────────────────────
+    '80:91:33': 'iRobot (Roomba)',
+    'b8:31:b5': 'iRobot (Roomba)',
+    '40:9f:38': 'iRobot (Roomba)',
+    '48:4b:aa': 'iRobot (Roomba)',
+
+    // ── Ecovacs (Deebot) ──────────────────────────────────────────
+    'ac:84:c6': 'Ecovacs (Deebot)',
+    '00:13:ef': 'Ecovacs (Deebot)',
+
+    // ── Shelly (Smart Switches / Relays) ─────────────────────────
+    'c4:5b:be': 'Shelly (Smart Relay)',
+    'e8:db:84': 'Shelly / Espressif',
+    '34:94:54': 'Shelly (Smart Relay)',
+    '30:c6:f7': 'Shelly (Smart Relay)',
+
+    // ── Lutron (Smart Dimmer / Switches) ─────────────────────────
+    '00:17:00': 'Lutron Electronics',
+    'a4:5d:36': 'Lutron Electronics',
+
+    // ── Leviton (Smart Switches) ──────────────────────────────────
+    '24:fd:5b': 'Leviton Manufacturing',
+
+    // ── Belkin / WeMo ─────────────────────────────────────────────
+    '94:10:3e': 'Belkin International (WeMo)',
+    'ec:1a:59': 'Belkin International (WeMo)',
+    'b4:75:0e': 'Belkin International (WeMo)',
+
+    // ── Amazon / Echo / Alexa ─────────────────────────────────────
+    'fc:65:de': 'Amazon (Echo/Alexa)',
+    '44:65:0d': 'Amazon (Echo/Alexa)',
+    '68:37:e9': 'Amazon (Echo/Alexa)',
+    '84:d6:d0': 'Amazon (Echo/Alexa)',
+    '34:d2:70': 'Amazon (Echo/Alexa)',
+    'a4:08:f5': 'Amazon (Echo/Alexa)',
+
+    // ── Philips Hue / Signify ─────────────────────────────────────
+    '00:17:88': 'Signify (Philips Hue)',
+    'ec:b5:fa': 'Signify (Philips Hue)',
+
+    // ── IKEA Tradfri ──────────────────────────────────────────────
+    'ac:23:3f': 'IKEA Tradfri',
+    'cc:86:ec': 'IKEA Tradfri',
+
+    // ── Sonos ─────────────────────────────────────────────────────
+    '78:28:ca': 'Sonos Inc.',
+    '94:9f:3e': 'Sonos Inc.',
+    '48:a6:b8': 'Sonos Inc.',
+
+    // ── Nintendo ─────────────────────────────────────────────────
+    '98:b6:e9': 'Nintendo Co.',
+    '00:09:bf': 'Nintendo Co.',
+    '58:2f:40': 'Nintendo Co.',
+
+    // ── Synology / QNAP (NAS) ─────────────────────────────────────
+    '00:11:32': 'Synology (NAS)',
+    '00:08:9b': 'QNAP Systems (NAS)',
+
+    // ── Netgear ───────────────────────────────────────────────────
+    '00:14:6c': 'Netgear Inc.',
+    '20:4e:7f': 'Netgear Inc.',
+    'a0:04:60': 'Netgear Inc.',
+
+    // ── Tuya (Genérico Smart Home) ────────────────────────────────
+    'b0:f5:47': 'Tuya Smart',
+    '7c:df:a1': 'Tuya Smart',
+    'dc:4f:22': 'Tuya Smart',
+    'c8:47:8c': 'Tuya Smart',
   };
 
   const getMacVendor = (mac) => {
@@ -318,13 +479,45 @@ export default function NetworkMonitor() {
   // Filter neighbors
   const filteredNeighbors = data.neighbors.filter(n => {
     const text = searchNeigh.toLowerCase();
-    return (
+    const matchesSearch = (
       n.ip.toLowerCase().includes(text) ||
       n.mac.toLowerCase().includes(text) ||
       n.dev.toLowerCase().includes(text) ||
       n.state.toLowerCase().includes(text)
     );
+
+    if (!matchesSearch) return false;
+
+    if (filterNeigh === 'no-nickname') {
+      return !n.customName;
+    }
+    if (filterNeigh === 'with-nickname') {
+      return !!n.customName;
+    }
+
+    return true;
   });
+
+  // Auto-probe neighbors for Wiz protocol — only real LAN IPs (skip Docker/virtual 172.x ranges)
+  const isRealLanIp = (ip) => {
+    if (!ip) return false;
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('10.')) return true;
+    // 172.16.0.0 – 172.31.255.255 = private, but Docker uses these too.
+    // Only probe if it's NOT a Docker bridge (common Docker ranges: 172.17–172.19)
+    const parts = ip.split('.').map(Number);
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false; // skip all 172 private
+    return false;
+  };
+
+  useEffect(() => {
+    data.neighbors.forEach(n => {
+      // Only probe real LAN devices we haven't tried yet
+      if (isRealLanIp(n.ip) && wizStates[n.ip] === undefined) {
+        fetchWizState(n.ip);
+      }
+    });
+  }, [data.neighbors]); // eslint-disable-line
 
   if (loading && data.interfaces.length === 0) {
     return (
@@ -770,6 +963,31 @@ export default function NetworkMonitor() {
             </div>
             
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* Filtro de Apodos */}
+              <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '8px' }}>
+                <button 
+                  className={`btn ${filterNeigh === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => setFilterNeigh('all')}
+                >
+                  Todos ({data.neighbors.length})
+                </button>
+                <button 
+                  className={`btn ${filterNeigh === 'with-nickname' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => setFilterNeigh('with-nickname')}
+                >
+                  Con apodo ({data.neighbors.filter(n => n.customName).length})
+                </button>
+                <button 
+                  className={`btn ${filterNeigh === 'no-nickname' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => setFilterNeigh('no-nickname')}
+                >
+                  Sin apodo ({data.neighbors.filter(n => !n.customName).length})
+                </button>
+              </div>
+
               <div className="search-input-wrapper" style={{ width: '220px' }}>
                 <Search size={14} />
                 <input 
@@ -911,19 +1129,85 @@ export default function NetworkMonitor() {
                             </span>
                           </td>
                           <td>
-                            <button 
-                              className="btn btn-secondary btn-icon"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                              onClick={() => handleScanPorts(n.ip)}
-                              disabled={scanningPortsIp === n.ip}
-                            >
-                              {scanningPortsIp === n.ip ? (
-                                <div className="spinner" style={{ width: '10px', height: '10px', borderWidth: '1.5px' }}></div>
-                              ) : (
-                                <Eye size={12} />
-                              )}
-                              <span>Puertos</span>
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {isWizBulb(n.mac, n.ip) && (() => {
+                                const wiz = wizStates[n.ip];
+                                const isOn = wiz?.state ?? false;
+                                const isLoading = wiz?.loading;
+                                const hasError = wiz?.error;
+                                return (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} title={hasError ? `Sin respuesta: ${wiz.error}` : isOn ? 'Encendida' : 'Apagada'}>
+                                    <button
+                                      onClick={() => wiz && !isLoading ? toggleWiz(n.ip, isOn) : fetchWizState(n.ip)}
+                                      disabled={isLoading}
+                                      style={{
+                                        position: 'relative',
+                                        width: '40px',
+                                        height: '22px',
+                                        borderRadius: '11px',
+                                        border: 'none',
+                                        cursor: isLoading ? 'wait' : 'pointer',
+                                        background: isLoading ? 'rgba(255,255,255,0.1)'
+                                          : hasError ? 'rgba(255,255,255,0.08)'
+                                          : isOn ? '#FFD600'
+                                          : 'rgba(255,255,255,0.1)',
+                                        transition: 'background 0.25s',
+                                        padding: 0,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <span style={{
+                                        position: 'absolute',
+                                        top: '3px',
+                                        left: isLoading ? '9px' : hasError ? '9px' : isOn ? '21px' : '3px',
+                                        width: '16px',
+                                        height: '16px',
+                                        borderRadius: '50%',
+                                        background: hasError ? 'rgba(255,255,255,0.3)' : '#fff',
+                                        transition: 'left 0.25s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '8px',
+                                      }}>
+                                        {isLoading ? '⟳' : hasError ? '?' : ''}
+                                      </span>
+                                    </button>
+                                    <span style={{ fontSize: '0.7rem', color: hasError ? 'var(--text-muted)' : isOn ? '#FFD600' : 'var(--text-muted)', fontWeight: 500 }}>
+                                      {isLoading ? '...' : hasError ? 'Sin resp.' : isOn ? '💡 ON' : 'OFF'}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                              <button
+                                className="btn btn-secondary btn-icon"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => handleScanPorts(n.ip)}
+                                disabled={scanningPortsIp === n.ip}
+                              >
+                                {scanningPortsIp === n.ip ? (
+                                  <div className="spinner" style={{ width: '10px', height: '10px', borderWidth: '1.5px' }}></div>
+                                ) : (
+                                  <Eye size={12} />
+                                )}
+                                <span>Puertos</span>
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-icon"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', color: identifyData[n.ip]?.result ? 'var(--color-secondary)' : undefined }}
+                                onClick={() => identifyData[n.ip]?.result
+                                  ? setIdentifyData(prev => { const c = {...prev}; delete c[n.ip]; return c; })
+                                  : handleIdentify(n.ip)
+                                }
+                                disabled={identifyData[n.ip]?.loading}
+                                title="Identificar dispositivo (DNS, HTTP, mDNS, Nmap)"
+                              >
+                                {identifyData[n.ip]?.loading
+                                  ? <div className="spinner" style={{ width: '10px', height: '10px', borderWidth: '1.5px' }}></div>
+                                  : <Zap size={12} />}
+                                <span>{identifyData[n.ip]?.result ? 'Info \u2713' : 'Identificar'}</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {ports && (
@@ -989,6 +1273,53 @@ export default function NetworkMonitor() {
                             </td>
                           </tr>
                         )}
+                        {identifyData[n.ip]?.result && (() => {
+                          const id = identifyData[n.ip].result;
+                          const hasInfo = id.dns || id.http || id.https || id.mdns || id.nmap;
+                          return (
+                            <tr>
+                              <td colSpan="6" style={{ background: 'rgba(79,172,254,0.04)', padding: '14px 24px', borderTop: '1px solid rgba(79,172,254,0.1)' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-secondary)', letterSpacing: '0.05em' }}>🔍 IDENTIFICACIÓN DE {n.ip}</span>
+                                  {!hasInfo && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No se obtuvo información adicional del dispositivo.</span>}
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                                    {id.dns && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>DNS Inverso</span>
+                                        <span style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>{id.dns}</span>
+                                      </div>
+                                    )}
+                                    {(id.http || id.https) && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Página Web</span>
+                                        {id.http && <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>HTTP: {id.http}</span>}
+                                        {id.https && <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)' }}>HTTPS: {id.https}</span>}
+                                      </div>
+                                    )}
+                                    {id.mdns && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Servicios mDNS</span>
+                                        {id.mdns.map((s, i) => (
+                                          <span key={i} style={{ fontSize: '0.8rem', color: 'var(--color-secondary)' }}>
+                                            {s.name} <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>({s.service})</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {id.nmap && (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Nmap / OS</span>
+                                        {id.nmap.map((line, i) => (
+                                          <span key={i} style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{line}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })()}
                       </React.Fragment>
                     );
                   })
