@@ -1589,30 +1589,28 @@ app.post('/api/network/scan-ports', async (req, res) => {
 // 18. Trigger Network Ping Sweep/Scan API
 app.post('/api/network/scan', async (req, res) => {
   try {
-    const script = [
-      `subnets=$(ip -o addr show | grep -v 'lo' | awk '{print $4}' | grep -E '^[0-9]')`,
-      `for subnet in $subnets; do`,
-      `  if command -v nmap >/dev/null 2>&1; then`,
-      `    nmap -sn "$subnet" >/dev/null 2>&1`,
-      `  elif command -v arp-scan >/dev/null 2>&1; then`,
-      `    sudo -n arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1 || arp-scan --subnet="$subnet" --numeric >/dev/null 2>&1`,
-      `  else`,
-      `    base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)`,
-      `    mask=$(echo $subnet | cut -d/ -f2)`,
-      `    if [ "$mask" = "24" ]; then`,
-      `      for i in {1..254}; do`,
-      `        ping -c 1 -w 1 "$base_ip.$i" >/dev/null 2>&1 &`,
-      `      done`,
-      `      wait`,
-      `    fi`,
-      `  fi`,
-      `done`,
-      `echo "===NEIGHBORS==="`,
-      `ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"`,
-      `echo "===IFACES==="`,
-      `ip -o addr show 2>/dev/null || ifconfig 2>/dev/null || echo "NONE"`
-    ].join(' ; ');
-
+    // Use nmap directly if available — it's faster and more accurate than ping sweep
+    const script = `
+subnets=$(ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | head -5)
+for subnet in $subnets; do
+  if command -v nmap >/dev/null 2>&1; then
+    nmap -sn --host-timeout 5s "$subnet" 2>/dev/null
+  else
+    base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)
+    mask=$(echo $subnet | cut -d/ -f2)
+    if [ "$mask" = "24" ]; then
+      for i in $(seq 1 254); do
+        ping -c 1 -W 1 "$base_ip.$i" >/dev/null 2>&1 &
+      done
+      wait
+    fi
+  fi
+done
+echo "===NEIGHBORS==="
+ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"
+echo "===IFACES==="
+ip -o addr show 2>/dev/null || echo "NONE"
+`;
     const output = await sshManager.exec(script);
     
     // Fetch custom nicknames from DB

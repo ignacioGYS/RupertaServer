@@ -5,9 +5,12 @@ import { Lightbulb, RefreshCw, Wifi, WifiOff, Loader, Palette, Thermometer } fro
 
 const isRealLanIp = (ip) => {
   if (!ip) return false;
-  if (ip.startsWith('192.168.')) return true;
-  if (ip.startsWith('10.')) return true;
-  return false;
+  // Only LAN ranges
+  if (!ip.startsWith('192.168.') && !ip.startsWith('10.')) return false;
+  // Skip gateway (.1), broadcast (.255), and other infra IPs unlikely to be lights
+  const lastOctet = Number(ip.split('.').pop());
+  if (lastOctet === 1 || lastOctet === 255 || lastOctet === 0) return false;
+  return true;
 };
 
 const hexToRgb = (hex) => {
