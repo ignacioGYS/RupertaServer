@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -9,6 +9,7 @@ import ConnectionStatus from './components/ConnectionStatus';
 import HardwareInfo from './components/HardwareInfo';
 import GpuMonitor from './components/GpuMonitor';
 import NetworkMonitor from './components/NetworkMonitor';
+import Lights from './components/Lights';
 import { useUploads } from './context/UploadContext';
 
 function UploadStatusPanel({ onClose }) {
@@ -91,6 +92,7 @@ function App() {
     { id: 'hardware', label: 'Hardware', icon: <HardwareIcon />, component: <HardwareInfo /> },
     { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon />, component: <GpuMonitor /> },
     { id: 'network', label: 'Red y Conexiones', icon: <Network />, component: <NetworkMonitor /> },
+    { id: 'lights', label: 'Luces', icon: <Lightbulb />, component: <Lights /> },
     { id: 'files', label: 'Archivos (SFTP)', icon: <Folder />, component: <FileExplorer /> },
     { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon />, component: <Terminal /> }
   ];
@@ -109,6 +111,8 @@ function App() {
         return { title: 'Monitoreo de GPU', subtitle: 'Rendimiento en tiempo real de GPU AMD/NVIDIA y consola interactiva nvtop' };
       case 'network':
         return { title: 'Red y Conexiones', subtitle: 'Dispositivos en la red local y conexiones activas al servidor' };
+      case 'lights':
+        return { title: 'Luces', subtitle: 'Control de luces inteligentes WiZ en la red local' };
       case 'files':
         return { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' };
       case 'terminal':

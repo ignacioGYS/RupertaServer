@@ -301,6 +301,7 @@ export default function NetworkMonitor() {
     '7c:df:a1': 'Tuya Smart',
     'dc:4f:22': 'Tuya Smart',
     'c8:47:8c': 'Tuya Smart',
+    'fc:67:1f': 'Tuya Smart',
   };
 
   const getMacVendor = (mac) => {
@@ -316,7 +317,7 @@ export default function NetworkMonitor() {
     const oui = cleanMac.split(':').slice(0, 3).join(':');
     const vendor = macOUIs[oui] || '';
     
-    if (vendor.includes('Wiz') || vendor.includes('Espressif')) {
+    if (vendor.includes('Wiz') || vendor.includes('Espressif') || vendor.includes('Tuya')) {
       return { label: 'Domótica / Wiz', icon: <Lightbulb size={16} color="#FFD600" /> };
     }
     if (vendor.includes('Samsung') || vendor.includes('LG') || vendor.includes('Sony')) {

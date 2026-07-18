@@ -1405,6 +1405,47 @@ app.post('/api/wiz/set', async (req, res) => {
   }
 });
 
+// POST /api/wiz/brightness  body: { ip, brightness: 10-100 }
+app.post('/api/wiz/brightness', async (req, res) => {
+  const { ip, brightness } = req.body;
+  if (!ip || brightness === undefined) return res.status(400).json({ error: 'ip and brightness required' });
+  const dim = Math.max(10, Math.min(100, Number(brightness)));
+  try {
+    await wizUdp(ip, { method: 'setPilot', params: { dimming: dim } });
+    res.json({ success: true, brightness: dim });
+  } catch (err) {
+    res.status(504).json({ error: err.message });
+  }
+});
+
+// POST /api/wiz/color  body: { ip, r, g, b } OR { ip, temp }
+// r, g, b: 0-255  |  temp: 2200-6500 (Kelvin, white light)
+app.post('/api/wiz/color', async (req, res) => {
+  const { ip, r, g, b, temp } = req.body;
+  if (!ip) return res.status(400).json({ error: 'ip required' });
+  try {
+    let params;
+    if (temp !== undefined) {
+      // White temperature mode
+      const t = Math.max(2200, Math.min(6500, Number(temp)));
+      params = { temp: t };
+    } else if (r !== undefined && g !== undefined && b !== undefined) {
+      // RGB color mode
+      params = {
+        r: Math.max(0, Math.min(255, Number(r))),
+        g: Math.max(0, Math.min(255, Number(g))),
+        b: Math.max(0, Math.min(255, Number(b))),
+      };
+    } else {
+      return res.status(400).json({ error: 'Provide r,g,b or temp' });
+    }
+    await wizUdp(ip, { method: 'setPilot', params });
+    res.json({ success: true, ...params });
+  } catch (err) {
+    res.status(504).json({ error: err.message });
+  }
+});
+
 // 17d-bis. Device identification: DNS reverse + HTTP banner (via SSH curl) + mDNS + nmap
 app.get('/api/network/identify', async (req, res) => {
   const { ip } = req.query;
