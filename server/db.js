@@ -58,6 +58,15 @@ export const initializeDb = async () => {
       )
     `);
 
+    // Migrate/Add columns to local_devices if they don't exist
+    try {
+      await query(`ALTER TABLE local_devices ADD COLUMN IF NOT EXISTS is_light BOOLEAN DEFAULT FALSE`);
+      await query(`ALTER TABLE local_devices ADD COLUMN IF NOT EXISTS light_type VARCHAR(50) DEFAULT 'wiz'`);
+      await query(`ALTER TABLE local_devices ADD COLUMN IF NOT EXISTS device_config JSONB DEFAULT '{}'::jsonb`);
+    } catch (err) {
+      console.warn('[DB Migration] Notice: Columns already exist or migration skipped:', err.message);
+    }
+
     console.log('✅ Base de datos PostgreSQL lista y conectada.');
   } catch (error) {
     console.error('❌ Error conectando o inicializando PostgreSQL:', error.message);

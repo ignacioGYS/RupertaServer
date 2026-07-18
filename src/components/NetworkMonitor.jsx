@@ -21,6 +21,7 @@ export default function NetworkMonitor() {
   const [scannedPorts, setScannedPorts] = useState({});
   const [wizStates, setWizStates] = useState({});
   const [identifyData, setIdentifyData] = useState({});   // { [ip]: { loading, result, error } }
+  const [configuringLight, setConfiguringLight] = useState(null); // { ip, mac, customName, isLight, lightType, deviceConfig }
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
@@ -60,18 +61,20 @@ export default function NetworkMonitor() {
     }
   };
 
-  // Show Wiz switch if MAC suggests it OR if the device already responded to Wiz protocol
+  // Show switch if explicitly configured as Light OR if MAC suggests Wiz OR responded to probe
   const isWizBulb = (mac, ip) => {
     const vendor = getMacVendor(mac);
-    const byMac = vendor.includes('Wiz') || vendor.includes('Espressif');
-    const byProbe = wizStates[ip] && !wizStates[ip].error && wizStates[ip].state !== undefined;
-    return byMac || byProbe;
+    return vendor.includes('Wiz') || vendor.includes('Espressif');
   };
 
-  const fetchWizState = async (ip) => {
+  const isLightDevice = (n) => {
+    return n.isLight || isWizBulb(n.mac, n.ip) || (wizStates[n.ip] && !wizStates[n.ip].error && wizStates[n.ip].state !== undefined);
+  };
+
+  const fetchWizState = async (ip, mac) => {
     setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: true, error: null } }));
     try {
-      const res = await fetch(`/api/wiz/state?ip=${encodeURIComponent(ip)}`);
+      const res = await fetch(`/api/wiz/state?ip=${encodeURIComponent(ip)}&mac=${encodeURIComponent(mac || '')}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setWizStates(prev => ({ ...prev, [ip]: { state: data.state, brightness: data.brightness, loading: false, error: null } }));
@@ -80,13 +83,13 @@ export default function NetworkMonitor() {
     }
   };
 
-  const toggleWiz = async (ip, currentState) => {
+  const toggleWiz = async (ip, mac, currentState) => {
     setWizStates(prev => ({ ...prev, [ip]: { ...prev[ip], loading: true } }));
     try {
       const res = await fetch('/api/wiz/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip, state: !currentState })
+        body: JSON.stringify({ ip, mac, state: !currentState })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -1131,7 +1134,7 @@ export default function NetworkMonitor() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {isWizBulb(n.mac, n.ip) && (() => {
+                              {isLightDevice(n) && (() => {
                                 const wiz = wizStates[n.ip];
                                 const isOn = wiz?.state ?? false;
                                 const isLoading = wiz?.loading;
@@ -1139,7 +1142,7 @@ export default function NetworkMonitor() {
                                 return (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} title={hasError ? `Sin respuesta: ${wiz.error}` : isOn ? 'Encendida' : 'Apagada'}>
                                     <button
-                                      onClick={() => wiz && !isLoading ? toggleWiz(n.ip, isOn) : fetchWizState(n.ip)}
+                                      onClick={() => wiz && !isLoading ? toggleWiz(n.ip, n.mac, isOn) : fetchWizState(n.ip, n.mac)}
                                       disabled={isLoading}
                                       style={{
                                         position: 'relative',
@@ -1180,6 +1183,34 @@ export default function NetworkMonitor() {
                                   </div>
                                 );
                               })()}
+
+                              {/* Configure Light (bulb icon button) */}
+                              <button
+                                className="btn btn-secondary btn-icon"
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '0.75rem',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  color: n.isLight ? '#FFD600' : 'var(--text-secondary)',
+                                  borderColor: n.isLight ? 'rgba(255, 214, 0, 0.4)' : undefined,
+                                  background: n.isLight ? 'rgba(255, 214, 0, 0.08)' : undefined
+                                }}
+                                onClick={() => setConfiguringLight({
+                                  ip: n.ip,
+                                  mac: n.mac,
+                                  customName: n.customName || '',
+                                  isLight: n.isLight || false,
+                                  lightType: n.lightType || 'wiz',
+                                  deviceConfig: n.deviceConfig || {}
+                                })}
+                                title="Configurar dispositivo como luz inteligente (Wiz, Tasmota, Shelly, HTTP)"
+                              >
+                                <Lightbulb size={12} color={n.isLight ? '#FFD600' : undefined} />
+                                <span>Luz</span>
+                              </button>
+
                               <button
                                 className="btn btn-secondary btn-icon"
                                 style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1331,6 +1362,167 @@ export default function NetworkMonitor() {
         </div>
 
       </div>
+
+      {/* Light Configuration Modal */}
+      {configuringLight && (() => {
+        const dev = configuringLight;
+        const [isLight, setIsLight] = useState(dev.isLight);
+        const [lightType, setLightType] = useState(dev.lightType || 'wiz');
+        const [urlOn, setUrlOn] = useState(dev.deviceConfig?.urlOn || '');
+        const [urlOff, setUrlOff] = useState(dev.deviceConfig?.urlOff || '');
+        const [urlState, setUrlState] = useState(dev.deviceConfig?.urlState || '');
+        const [saving, setSaving] = useState(false);
+
+        // Pre-fill defaults based on selected type
+        const handleTypeChange = (type) => {
+          setLightType(type);
+          if (type === 'tasmota') {
+            setUrlOn(`http://${dev.ip}/cm?cmnd=Power%20On`);
+            setUrlOff(`http://${dev.ip}/cm?cmnd=Power%20Off`);
+            setUrlState(`http://${dev.ip}/cm?cmnd=Power`);
+          } else if (type === 'shelly') {
+            setUrlOn(`http://${dev.ip}/relay/0?turn=on`);
+            setUrlOff(`http://${dev.ip}/relay/0?turn=off`);
+            setUrlState(`http://${dev.ip}/relay/0`);
+          } else if (type === 'wiz') {
+            setUrlOn('');
+            setUrlOff('');
+            setUrlState('');
+          }
+        };
+
+        const handleSaveLight = async () => {
+          setSaving(true);
+          try {
+            const config = { urlOn, urlOff, urlState };
+            const res = await fetch('/api/network/device-light', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                mac: dev.mac,
+                name: dev.customName || 'Luz Genérica',
+                isLight,
+                lightType,
+                deviceConfig: config
+              })
+            });
+            if (!res.ok) throw new Error('Error al guardar configuración');
+            alert('Configuración guardada exitosamente.');
+            setConfiguringLight(null);
+            fetchData(); // Refresh list to reflect changes
+          } catch (e) {
+            alert(e.message);
+          } finally {
+            setSaving(false);
+          }
+        };
+
+        return (
+          <div className="upload-panel-overlay" style={{ zIndex: 9999 }}>
+            <div className="upload-panel-popup" style={{ maxWidth: '450px', width: '90%', padding: '24px' }}>
+              <div className="upload-panel-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Lightbulb size={20} color={isLight ? '#FFD600' : 'var(--text-secondary)'} />
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>Configurar como Luz</span>
+                </div>
+                <button onClick={() => setConfiguringLight(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.1rem' }}>&times;</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Dispositivo: <strong style={{ color: 'var(--text-primary)' }}>{dev.customName || dev.ip}</strong> ({dev.mac})
+                </div>
+
+                {/* Switch IsLight */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>¿Es un dispositivo de iluminación?</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Aparecerá en la sección "Luces" y tendrá un switch.</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isLight}
+                    onChange={(e) => setIsLight(e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#FFD600' }}
+                  />
+                </div>
+
+                {isLight && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* Integration type */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Tipo de Integración</label>
+                      <select
+                        value={lightType}
+                        onChange={(e) => handleTypeChange(e.target.value)}
+                        style={{
+                          background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: '8px', padding: '10px', color: 'var(--text-primary)', outline: 'none',
+                          cursor: 'pointer', fontSize: '0.85rem'
+                        }}
+                      >
+                        <option value="wiz">WiZ Smart Bulb (UDP - Nativo)</option>
+                        <option value="tasmota">Tasmota Switch (HTTP - Autoconfigurado)</option>
+                        <option value="shelly">Shelly Switch (HTTP - Autoconfigurado)</option>
+                        <option value="http">HTTP Personalizado (Manual)</option>
+                      </select>
+                    </div>
+
+                    {/* URLs configuration for HTTP devices */}
+                    {lightType !== 'wiz' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.15)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>URL para Encender (ON)</label>
+                          <input
+                            type="text" value={urlOn} onChange={e => setUrlOn(e.target.value)}
+                            placeholder="e.g. http://192.168.1.41/relay/0?turn=on"
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.78rem', outline: 'none' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>URL para Apagar (OFF)</label>
+                          <input
+                            type="text" value={urlOff} onChange={e => setUrlOff(e.target.value)}
+                            placeholder="e.g. http://192.168.1.41/relay/0?turn=off"
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.78rem', outline: 'none' }}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>URL de Estado (Opcional)</label>
+                          <input
+                            type="text" value={urlState} onChange={e => setUrlState(e.target.value)}
+                            placeholder="e.g. http://192.168.1.41/relay/0"
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '8px 10px', color: 'var(--text-primary)', fontSize: '0.78rem', outline: 'none' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px' }}>
+                <button onClick={() => setConfiguringLight(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.82rem' }}>Cancelar</button>
+                <button
+                  onClick={handleSaveLight}
+                  disabled={saving}
+                  style={{
+                    padding: '8px 20px', borderRadius: '8px', border: 'none',
+                    background: 'linear-gradient(135deg, #FFD600, #FFA000)', color: '#1a1200',
+                    fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontSize: '0.82rem',
+                    boxShadow: '0 4px 12px rgba(255,214,0,0.2)'
+                  }}
+                >
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

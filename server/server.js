@@ -1081,15 +1081,20 @@ app.get('/api/network/connections', async (req, res) => {
 
     const output = await sshManager.exec(command);
     
-    // Fetch custom nicknames from DB
-    let nicknamesMap = {};
+    // Fetch custom nicknames & config from DB
+    let devicesMap = {};
     try {
-      const dbResult = await query(`SELECT mac, custom_name FROM local_devices`);
+      const dbResult = await query(`SELECT mac, custom_name, is_light, light_type, device_config FROM local_devices`);
       dbResult.rows.forEach(row => {
-        nicknamesMap[row.mac.toLowerCase()] = row.custom_name;
+        devicesMap[row.mac.toLowerCase()] = {
+          customName: row.custom_name,
+          isLight: !!row.is_light,
+          lightType: row.light_type || 'wiz',
+          deviceConfig: row.device_config || {}
+        };
       });
     } catch (e) {
-      console.error('[DB] Error fetching local device nicknames:', e.message);
+      console.error('[DB] Error fetching local devices configuration:', e.message);
     }
     
     // Parser helper for SSH sections
@@ -1269,8 +1274,17 @@ app.get('/api/network/connections', async (req, res) => {
         }
         
         if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
-          const customName = nicknamesMap[mac.toLowerCase()] || '';
-          neighbors.push({ ip, mac, dev, state, customName });
+          const dbDev = devicesMap[mac.toLowerCase()] || {};
+          neighbors.push({
+            ip,
+            mac,
+            dev,
+            state,
+            customName: dbDev.customName || '',
+            isLight: dbDev.isLight || false,
+            lightType: dbDev.lightType || 'wiz',
+            deviceConfig: dbDev.deviceConfig || {}
+          });
         }
       }
     });
@@ -1280,20 +1294,37 @@ app.get('/api/network/connections', async (req, res) => {
       if (iface.ip && iface.ip !== '-' && iface.ip !== '127.0.0.1' && iface.mac && iface.mac !== '-') {
         const exists = neighbors.some(n => n.ip === iface.ip);
         if (!exists) {
-          const customName = nicknamesMap[iface.mac.toLowerCase()] || 'Este Servidor (RupertaServer)';
-          neighbors.push({ ip: iface.ip, mac: iface.mac, dev: iface.name, state: 'ACTIVE', customName });
+          const dbDev = devicesMap[iface.mac.toLowerCase()] || {};
+          neighbors.push({
+            ip: iface.ip,
+            mac: iface.mac,
+            dev: iface.name,
+            state: 'ACTIVE',
+            customName: dbDev.customName || 'Este Servidor (RupertaServer)',
+            isLight: dbDev.isLight || false,
+            lightType: dbDev.lightType || 'wiz',
+            deviceConfig: dbDev.deviceConfig || {}
+          });
         }
       }
     });
 
     // Merge nmap cache — adds devices not in ARP table (e.g. IoT devices that never talked to the server)
-    // Trigger a background refresh (non-blocking), serve whatever is cached right now
     runNmapScan().catch(() => {});
     nmapCache.hosts.forEach(h => {
       const exists = neighbors.some(n => n.ip === h.ip);
       if (!exists && h.mac && h.mac !== '00:00:00:00:00:00') {
-        const customName = nicknamesMap[h.mac] || '';
-        neighbors.push({ ip: h.ip, mac: h.mac, dev: '-', state: 'REACHABLE', customName });
+        const dbDev = devicesMap[h.mac.toLowerCase()] || {};
+        neighbors.push({
+          ip: h.ip,
+          mac: h.mac,
+          dev: '-',
+          state: 'REACHABLE',
+          customName: dbDev.customName || '',
+          isLight: dbDev.isLight || false,
+          lightType: dbDev.lightType || 'wiz',
+          deviceConfig: dbDev.deviceConfig || {}
+        });
       }
     });
 
@@ -1396,7 +1427,33 @@ app.post('/api/network/device-name', async (req, res) => {
   }
 });
 
-// ── Wiz Smart Bulb Control (UDP port 38899) ─────────────────────────────────
+// 17c-bis. Mark device as light & configure type
+app.post('/api/network/device-light', async (req, res) => {
+  const { mac, name, isLight, lightType, deviceConfig } = req.body;
+  if (!mac) return res.status(400).json({ error: 'MAC is required' });
+  try {
+    await query(
+      `INSERT INTO local_devices (mac, custom_name, is_light, light_type, device_config, updated_at) 
+       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       ON CONFLICT (mac) 
+       DO UPDATE SET 
+         is_light = EXCLUDED.is_light,
+         light_type = EXCLUDED.light_type,
+         device_config = EXCLUDED.device_config,
+         custom_name = CASE WHEN EXCLUDED.custom_name != 'Luz Genérica' THEN EXCLUDED.custom_name ELSE local_devices.custom_name END,
+         updated_at = CURRENT_TIMESTAMP`,
+      [mac.toLowerCase(), name || 'Luz Genérica', !!isLight, lightType || 'wiz', JSON.stringify(deviceConfig || {})]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper variables to store temporary state of stateless HTTP switches in memory
+const httpLightsState = {};
+
+// ── Wiz & HTTP Smart Bulb Control ─────────────────────────────────
 
 const wizUdp = (ip, payload, timeoutMs = 1200) => new Promise((resolve, reject) => {
   const sock = dgram.createSocket('udp4');
@@ -1422,33 +1479,124 @@ const wizUdp = (ip, payload, timeoutMs = 1200) => new Promise((resolve, reject) 
   sock.send(msg, 0, msg.length, 38899, ip, (err) => { if (err) finish(err); });
 });
 
-// GET /api/wiz/state?ip=192.168.x.x  — returns { state, brightness, temp }
+// GET /api/wiz/state?ip=192.168.x.x&mac=xx:xx:xx:xx:xx:xx
 app.get('/api/wiz/state', async (req, res) => {
-  const { ip } = req.query;
+  const { ip, mac } = req.query;
   if (!ip) return res.status(400).json({ error: 'ip required' });
-  try {
-    const resp = await wizUdp(ip, { method: 'getPilot', params: {} });
-    const p = resp.result || {};
-    res.json({
-      state:      !!p.state,
-      brightness: p.dimming  ?? null,
-      temp:       p.temp     ?? null,
-      r: p.r ?? null, g: p.g ?? null, b: p.b ?? null
+
+  // 1. Check if we have this device registered in DB with a custom type
+  let isLight = false;
+  let lightType = 'wiz';
+  let deviceConfig = {};
+  if (mac) {
+    try {
+      const dbResult = await query(`SELECT is_light, light_type, device_config FROM local_devices WHERE mac = $1`, [mac.toLowerCase()]);
+      if (dbResult.rows.length > 0) {
+        isLight = !!dbResult.rows[0].is_light;
+        lightType = dbResult.rows[0].light_type || 'wiz';
+        deviceConfig = dbResult.rows[0].device_config || {};
+      }
+    } catch (_) {}
+  }
+
+  // 2. Query state based on type
+  if (lightType === 'wiz') {
+    try {
+      const resp = await wizUdp(ip, { method: 'getPilot', params: {} });
+      const p = resp.result || {};
+      return res.json({
+        state:      !!p.state,
+        brightness: p.dimming  ?? null,
+        temp:       p.temp     ?? null,
+        r: p.r ?? null, g: p.g ?? null, b: p.b ?? null
+      });
+    } catch (err) {
+      return res.status(504).json({ error: err.message });
+    }
+  } else if (lightType === 'http' || lightType === 'tasmota' || lightType === 'shelly') {
+    // If it's an HTTP light, we can query its status URL if configured
+    let stateUrl = deviceConfig.urlState;
+    if (lightType === 'tasmota') stateUrl = `http://${ip}/cm?cmnd=Power`;
+    if (lightType === 'shelly') stateUrl = `http://${ip}/relay/0`;
+
+    if (stateUrl) {
+      try {
+        const fetchResp = await fetch(stateUrl, { signal: AbortSignal.timeout(1500) });
+        if (fetchResp.ok) {
+          const body = await fetchResp.json().catch(() => ({}));
+          let state = false;
+          if (lightType === 'tasmota') {
+            state = String(body.POWER || body.power).toUpperCase() === 'ON';
+          } else if (lightType === 'shelly') {
+            state = !!(body.ison || body.state);
+          } else {
+            // custom HTTP
+            const path = deviceConfig.statePath || 'state';
+            state = !!body[path];
+          }
+          httpLightsState[ip] = state;
+          return res.json({ state, brightness: null, temp: null, r: null, g: null, b: null });
+        }
+      } catch (_) {}
+    }
+    // Return cached/optimistic state if HTTP query fails
+    return res.json({
+      state: !!httpLightsState[ip],
+      brightness: null, temp: null, r: null, g: null, b: null
     });
-  } catch (err) {
-    res.status(504).json({ error: err.message });
+  } else {
+    return res.status(400).json({ error: 'Unsupported light type' });
   }
 });
 
-// POST /api/wiz/set  body: { ip, state: true|false }
+// POST /api/wiz/set  body: { ip, mac, state: true|false }
 app.post('/api/wiz/set', async (req, res) => {
-  const { ip, state } = req.body;
+  const { ip, mac, state } = req.body;
   if (!ip || state === undefined) return res.status(400).json({ error: 'ip and state required' });
-  try {
-    await wizUdp(ip, { method: 'setPilot', params: { state: !!state } });
-    res.json({ success: true, state: !!state });
-  } catch (err) {
-    res.status(504).json({ error: err.message });
+
+  let lightType = 'wiz';
+  let deviceConfig = {};
+  if (mac) {
+    try {
+      const dbResult = await query(`SELECT light_type, device_config FROM local_devices WHERE mac = $1`, [mac.toLowerCase()]);
+      if (dbResult.rows.length > 0) {
+        lightType = dbResult.rows[0].light_type || 'wiz';
+        deviceConfig = dbResult.rows[0].device_config || {};
+      }
+    } catch (_) {}
+  }
+
+  if (lightType === 'wiz') {
+    try {
+      await wizUdp(ip, { method: 'setPilot', params: { state: !!state } });
+      return res.json({ success: true, state: !!state });
+    } catch (err) {
+      return res.status(504).json({ error: err.message });
+    }
+  } else if (lightType === 'http' || lightType === 'tasmota' || lightType === 'shelly') {
+    let actionUrl = state ? deviceConfig.urlOn : deviceConfig.urlOff;
+    if (lightType === 'tasmota') {
+      actionUrl = `http://${ip}/cm?cmnd=Power%20${state ? 'On' : 'Off'}`;
+    } else if (lightType === 'shelly') {
+      actionUrl = `http://${ip}/relay/0?turn=${state ? 'on' : 'off'}`;
+    }
+
+    if (!actionUrl) {
+      return res.status(400).json({ error: 'Action URL not configured for HTTP light' });
+    }
+
+    try {
+      const fetchResp = await fetch(actionUrl, { signal: AbortSignal.timeout(2000) });
+      if (fetchResp.ok) {
+        httpLightsState[ip] = !!state;
+        return res.json({ success: true, state: !!state });
+      }
+      throw new Error(`Device responded with HTTP status ${fetchResp.status}`);
+    } catch (err) {
+      return res.status(504).json({ error: `HTTP control failed: ${err.message}` });
+    }
+  } else {
+    return res.status(400).json({ error: 'Unsupported light type' });
   }
 });
 
@@ -1623,15 +1771,20 @@ ip -o addr show 2>/dev/null || echo "NONE"
 `;
     const output = await sshManager.exec(script);
     
-    // Fetch custom nicknames from DB
-    let nicknamesMap = {};
+    // Fetch custom nicknames & config from DB
+    let devicesMap = {};
     try {
-      const dbResult = await query(`SELECT mac, custom_name FROM local_devices`);
+      const dbResult = await query(`SELECT mac, custom_name, is_light, light_type, device_config FROM local_devices`);
       dbResult.rows.forEach(row => {
-        nicknamesMap[row.mac.toLowerCase()] = row.custom_name;
+        devicesMap[row.mac.toLowerCase()] = {
+          customName: row.custom_name,
+          isLight: !!row.is_light,
+          lightType: row.light_type || 'wiz',
+          deviceConfig: row.device_config || {}
+        };
       });
     } catch (e) {
-      console.error('[DB] Error fetching local device nicknames:', e.message);
+      console.error('[DB] Error fetching local devices configuration:', e.message);
     }
 
     // Parse sections helper
@@ -1731,8 +1884,17 @@ ip -o addr show 2>/dev/null || echo "NONE"
         }
         
         if (ip && mac && mac !== '-' && mac !== '00:00:00:00:00:00' && state !== 'FAILED') {
-          const customName = nicknamesMap[mac.toLowerCase()] || '';
-          neighbors.push({ ip, mac, dev, state, customName });
+          const dbDev = devicesMap[mac.toLowerCase()] || {};
+          neighbors.push({
+            ip,
+            mac,
+            dev,
+            state,
+            customName: dbDev.customName || '',
+            isLight: dbDev.isLight || false,
+            lightType: dbDev.lightType || 'wiz',
+            deviceConfig: dbDev.deviceConfig || {}
+          });
         }
       }
     });
@@ -1742,13 +1904,16 @@ ip -o addr show 2>/dev/null || echo "NONE"
       if (iface.ip && iface.ip !== '-' && iface.ip !== '127.0.0.1' && iface.mac && iface.mac !== '-') {
         const exists = neighbors.some(n => n.ip === iface.ip);
         if (!exists) {
-          const customName = nicknamesMap[iface.mac.toLowerCase()] || 'Este Servidor (RupertaServer)';
+          const dbDev = devicesMap[iface.mac.toLowerCase()] || {};
           neighbors.push({
             ip: iface.ip,
             mac: iface.mac,
             dev: iface.name,
             state: 'ACTIVE',
-            customName
+            customName: dbDev.customName || 'Este Servidor (RupertaServer)',
+            isLight: dbDev.isLight || false,
+            lightType: dbDev.lightType || 'wiz',
+            deviceConfig: dbDev.deviceConfig || {}
           });
         }
       }

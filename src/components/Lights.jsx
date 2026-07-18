@@ -44,7 +44,7 @@ const COLOR_PRESETS = [
 // ─── Individual Light Card ────────────────────────────────────────────────────
 
 function LightCard({ light, onToggle, onBrightness, onColor }) {
-  const { ip, name, state, brightness, loading, error, r, g, b, temp } = light;
+  const { ip, mac, name, state, brightness, loading, error, r, g, b, temp, lightType } = light;
   const isOn = !!state;
   const dim = brightness ?? 100;
   const [showColor, setShowColor] = useState(false);
@@ -56,6 +56,7 @@ function LightCard({ light, onToggle, onBrightness, onColor }) {
     : null;
   const glowColor = currentHex || '#FFD600';
   const isWhiteMode = !currentHex;
+  const supportsColor = lightType === 'wiz'; // Wiz supports color, HTTP lights (Tasmota/Shelly switches) don't for now
 
   return (
     <div
@@ -117,7 +118,11 @@ function LightCard({ light, onToggle, onBrightness, onColor }) {
           </div>
           {isOn && (
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {isWhiteMode && temp ? `🌡️ ${temp}K` : currentHex ? `🎨 ${currentHex.toUpperCase()}` : ''}
+              {supportsColor ? (
+                isWhiteMode && temp ? `🌡️ ${temp}K` : currentHex ? `🎨 ${currentHex.toUpperCase()}` : ''
+              ) : (
+                `🔌 ${lightType.toUpperCase()}`
+              )}
             </div>
           )}
         </div>
@@ -142,7 +147,7 @@ function LightCard({ light, onToggle, onBrightness, onColor }) {
         </span>
 
         <button
-          onClick={() => !loading && onToggle(ip, isOn)}
+          onClick={() => !loading && onToggle(ip, mac, isOn)}
           disabled={loading}
           style={{
             position: 'relative', width: '64px', height: '34px', borderRadius: '17px',
@@ -168,8 +173,8 @@ function LightCard({ light, onToggle, onBrightness, onColor }) {
         </button>
       </div>
 
-      {/* Brightness slider */}
-      {isOn && !error && (
+      {/* Brightness slider (Only Wiz bulbs) */}
+      {isOn && !error && supportsColor && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             <span>Brillo</span>
@@ -187,8 +192,8 @@ function LightCard({ light, onToggle, onBrightness, onColor }) {
         </div>
       )}
 
-      {/* Color button */}
-      {isOn && !error && (
+      {/* Color button (Only Wiz bulbs) */}
+      {isOn && !error && supportsColor && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <button
             onClick={() => setShowColor(v => !v)}
@@ -314,30 +319,81 @@ export default function Lights() {
       const res = await fetch('/api/network/connections');
       if (!res.ok) throw new Error('No se pudo obtener la lista de dispositivos');
       const json = await res.json();
-      const lanDevices = (json.neighbors || []).filter(n => isRealLanIp(n.ip));
+      const allDevices = json.neighbors || [];
 
-      const probes = lanDevices.map(async (device) => {
+      // Filter: devices that are explicitly marked as Light in DB OR have a real LAN IP (for auto-probing Wiz)
+      const lightsToQuery = allDevices.filter(d => d.isLight || isRealLanIp(d.ip));
+
+      const probes = lightsToQuery.map(async (device) => {
         try {
-          const r = await fetch(`/api/wiz/state?ip=${encodeURIComponent(device.ip)}`);
+          // If it's not a DB-registered light but it has a real LAN IP, we probe Wiz to see if it responds
+          const r = await fetch(`/api/wiz/state?ip=${encodeURIComponent(device.ip)}&mac=${encodeURIComponent(device.mac || '')}`);
           const data = await r.json();
-          if (!r.ok) return null;
+          
+          if (!r.ok) {
+            // If it failed Wiz UDP probe, but it is explicitly marked as Light in the DB (like HTTP/Tasmota switches), we keep it!
+            if (device.isLight) {
+              return {
+                ip: device.ip,
+                mac: device.mac,
+                name: device.customName || `Luz ${device.ip}`,
+                state: false,
+                brightness: null,
+                r: null, g: null, b: null, temp: null,
+                lightType: device.lightType || 'wiz',
+                loading: false,
+                error: null,
+              };
+            }
+            return null; // Ignore non-light devices that failed Wiz probe
+          }
+
           return {
             ip: device.ip,
-            name: device.customName || device.ip,
+            mac: device.mac,
+            name: device.customName || `Luz ${device.ip}`,
             state: data.state,
             brightness: data.brightness ?? 100,
             r: data.r ?? null,
             g: data.g ?? null,
             b: data.b ?? null,
             temp: data.temp ?? null,
+            lightType: device.lightType || 'wiz',
             loading: false,
             error: null,
           };
-        } catch { return null; }
+        } catch {
+          // In case of complete network fetch failure, keep the device in the UI if it's in the DB
+          if (device.isLight) {
+            return {
+              ip: device.ip,
+              mac: device.mac,
+              name: device.customName || `Luz ${device.ip}`,
+              state: false,
+              brightness: null,
+              r: null, g: null, b: null, temp: null,
+              lightType: device.lightType || 'wiz',
+              loading: false,
+              error: 'Offline',
+            };
+          }
+          return null;
+        }
       });
 
       const results = (await Promise.all(probes)).filter(Boolean);
-      setLights(results);
+      
+      // Remove duplicates by IP (e.g. if a device is both in DB and auto-probed)
+      const uniqueResults = [];
+      const seenIps = new Set();
+      for (const item of results) {
+        if (!seenIps.has(item.ip)) {
+          seenIps.add(item.ip);
+          uniqueResults.push(item);
+        }
+      }
+
+      setLights(uniqueResults);
       setLastScan(new Date());
     } catch (err) {
       console.error('Error discovering lights:', err);
@@ -348,12 +404,12 @@ export default function Lights() {
 
   useEffect(() => { discoverLights(); }, [discoverLights]);
 
-  const handleToggle = async (ip, currentState) => {
+  const handleToggle = async (ip, mac, currentState) => {
     setLights(prev => prev.map(l => l.ip === ip ? { ...l, loading: true } : l));
     try {
       const res = await fetch('/api/wiz/set', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip, state: !currentState }),
+        body: JSON.stringify({ ip, mac, state: !currentState }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -400,7 +456,7 @@ export default function Lights() {
     await Promise.all(lights.map(l =>
       fetch('/api/wiz/set', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip: l.ip, state: turnOn }),
+        body: JSON.stringify({ ip: l.ip, mac: l.mac, state: turnOn }),
       }).catch(() => {})
     ));
     setLights(prev => prev.map(l => ({ ...l, state: turnOn, loading: false })));
