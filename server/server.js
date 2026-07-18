@@ -1022,34 +1022,45 @@ app.get('/api/network/resolve-ip', async (req, res) => {
 
 // 17. Network Info & Connected Devices API
 
-// Nmap cache: run at most once every 2 minutes to avoid polling overhead
+// Nmap/ping-sweep cache: run at most once every 2 minutes
 let nmapCache = { hosts: [], updatedAt: 0 };
 
 async function runNmapScan() {
   const now = Date.now();
-  if (now - nmapCache.updatedAt < 2 * 60 * 1000) return nmapCache.hosts; // use cache
+  if (now - nmapCache.updatedAt < 2 * 60 * 1000) return nmapCache.hosts;
   try {
-    const script = [
-      `subnets=$(ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | head -5)`,
-      `for s in $subnets; do nmap -sn --host-timeout 5s "$s" 2>/dev/null; done`
-    ].join(' ; ');
-    const out = await sshManager.exec(script);
+    // Get LAN interfaces (e.g. 192.168.1.63 → base 192.168.1)
+    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's/\/.*//'`;
+    const ifaceOut = await sshManager.exec(ifaceScript);
+    const ownIPs = ifaceOut.split('\n').map(l => l.trim()).filter(Boolean);
+    const bases = [...new Set(ownIPs.map(ip => ip.split('.').slice(0, 3).join('.')))]; // e.g. ["192.168.1"]
+
+    if (bases.length === 0) {
+      // fallback: try enp34s0 directly
+      bases.push('192.168.1');
+    }
+
+    // Parallel ping sweep then read ARP
+    const sweepScript = bases.map(base =>
+      `for i in $(seq 1 254); do ping -c 1 -W 1 ${base}.$i >/dev/null 2>&1 & done`
+    ).join('\n') + '\nwait\nip neigh show';
+
+    const out = await sshManager.exec(sweepScript);
     const hosts = [];
-    let currentIp = null;
     for (const line of out.split('\n')) {
-      const ipMatch = line.match(/Nmap scan report for (?:\S+ \()?([\d.]+)\)?/);
-      if (ipMatch) { currentIp = ipMatch[1]; continue; }
-      const macMatch = line.match(/MAC Address: ([0-9A-Fa-f:]{17})/);
-      if (macMatch && currentIp) {
-        hosts.push({ ip: currentIp, mac: macMatch[1].toLowerCase() });
-        currentIp = null;
-      }
+      if (!line.includes('lladdr')) continue;
+      const parts = line.trim().split(/\s+/);
+      const ip = parts[0];
+      const lladdrIdx = parts.indexOf('lladdr');
+      if (lladdrIdx === -1 || !ip) continue;
+      const mac = parts[lladdrIdx + 1];
+      if (mac && mac !== '00:00:00:00:00:00') hosts.push({ ip, mac: mac.toLowerCase() });
     }
     nmapCache = { hosts, updatedAt: Date.now() };
     return hosts;
   } catch (e) {
-    console.error('[nmap] scan failed:', e.message);
-    return nmapCache.hosts; // return stale cache on error
+    console.error('[sweep] scan failed:', e.message);
+    return nmapCache.hosts;
   }
 }
 
@@ -1589,26 +1600,24 @@ app.post('/api/network/scan-ports', async (req, res) => {
 // 18. Trigger Network Ping Sweep/Scan API
 app.post('/api/network/scan', async (req, res) => {
   try {
-    // Run nmap, wrap output in ===NMAP=== section so the parser captures it
+    // 1. Detect LAN base IPs of the server's interfaces
+    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's/\/.*//'`;
+    let ifaceOut = '';
+    try { ifaceOut = await sshManager.exec(ifaceScript); } catch (_) {}
+    const ownIPs = ifaceOut.split('\n').map(l => l.trim()).filter(Boolean);
+    let bases = [...new Set(ownIPs.map(ip => ip.split('.').slice(0, 3).join('.')))];
+    if (bases.length === 0) bases = ['192.168.1']; // fallback
+
+    // 2. Ping sweep to populate ARP, then read neighbors + ifaces
+    const sweepLines = bases.map(base =>
+      `for i in $(seq 1 254); do ping -c 1 -W 1 ${base}.$i >/dev/null 2>&1 & done`
+    ).join('\n');
+
     const script = `
-subnets=$(ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | head -5)
-echo "===NMAP==="
-if command -v nmap >/dev/null 2>&1; then
-  for subnet in $subnets; do
-    nmap -sn --host-timeout 5s "$subnet" 2>/dev/null
-  done
-else
-  for subnet in $subnets; do
-    base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)
-    mask=$(echo $subnet | cut -d/ -f2)
-    if [ "$mask" = "24" ]; then
-      for i in $(seq 1 254); do ping -c 1 -W 1 "$base_ip.$i" >/dev/null 2>&1 & done
-      wait
-    fi
-  done
-fi
+${sweepLines}
+wait
 echo "===NEIGHBORS==="
-ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"
+ip neigh show 2>/dev/null || arp -an 2>/dev/null || echo "NONE"
 echo "===IFACES==="
 ip -o addr show 2>/dev/null || echo "NONE"
 `;
@@ -1745,33 +1754,9 @@ ip -o addr show 2>/dev/null || echo "NONE"
       }
     });
 
-    // Parse NMAP section — "Nmap scan report for X.X.X.X" + "MAC Address: AA:BB:CC:DD:EE:FF"
-    const rawNmap = sections['NMAP'] || [];
-    const nmapHosts = [];
-    let currentNmapIp = null;
-    for (const line of rawNmap) {
-      const ipMatch = line.match(/Nmap scan report for (?:\S+ \()?([\d.]+)\)?/);
-      if (ipMatch) { currentNmapIp = ipMatch[1]; continue; }
-      const macMatch = line.match(/MAC Address: ([0-9A-Fa-f:]{17})/);
-      if (macMatch && currentNmapIp) {
-        nmapHosts.push({ ip: currentNmapIp, mac: macMatch[1].toLowerCase() });
-        currentNmapIp = null;
-      }
-    }
-
-    // Update the shared nmapCache so /api/network/connections also reflects fresh results
-    if (nmapHosts.length > 0) {
-      nmapCache = { hosts: nmapHosts, updatedAt: Date.now() };
-    }
-
-    // Merge nmap hosts that aren't already in the ARP table
-    nmapHosts.forEach(h => {
-      const exists = neighbors.some(n => n.ip === h.ip);
-      if (!exists && h.mac && h.mac !== '00:00:00:00:00:00') {
-        const customName = nicknamesMap[h.mac] || '';
-        neighbors.push({ ip: h.ip, mac: h.mac, dev: '-', state: 'REACHABLE', customName });
-      }
-    });
+    // Update shared cache so /api/network/connections also gets fresh results
+    const arpHosts = neighbors.map(n => ({ ip: n.ip, mac: n.mac }));
+    if (arpHosts.length > 0) nmapCache = { hosts: arpHosts, updatedAt: Date.now() };
 
     res.json({ success: true, neighbors });
   } catch (err) {
