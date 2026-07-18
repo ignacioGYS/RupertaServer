@@ -1030,7 +1030,7 @@ async function runNmapScan() {
   if (now - nmapCache.updatedAt < 2 * 60 * 1000) return nmapCache.hosts;
   try {
     // Get LAN interfaces (e.g. 192.168.1.63 → base 192.168.1)
-    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's/\/.*//'`;
+    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's|/.*||'`;
     const ifaceOut = await sshManager.exec(ifaceScript);
     const ownIPs = ifaceOut.split('\n').map(l => l.trim()).filter(Boolean);
     const bases = [...new Set(ownIPs.map(ip => ip.split('.').slice(0, 3).join('.')))]; // e.g. ["192.168.1"]
@@ -1749,7 +1749,7 @@ app.post('/api/network/scan-ports', async (req, res) => {
 app.post('/api/network/scan', async (req, res) => {
   try {
     // 1. Detect LAN base IPs of the server's interfaces
-    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's/\/.*//'`;
+    const ifaceScript = `ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | sed 's|/.*||'`;
     let ifaceOut = '';
     try { ifaceOut = await sshManager.exec(ifaceScript); } catch (_) {}
     const ownIPs = ifaceOut.split('\n').map(l => l.trim()).filter(Boolean);
