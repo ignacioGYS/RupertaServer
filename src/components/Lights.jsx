@@ -481,13 +481,49 @@ export default function Lights() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button onClick={() => handleAll(true)} disabled={discovering || lights.length === 0}
-            style={{ padding: '9px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #FFD600, #FFA000)', color: '#1a1200', fontWeight: 700, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 14px rgba(255,214,0,0.3)', opacity: discovering ? 0.5 : 1 }}>
-            <Lightbulb size={14} /> Todas ON
+          <button
+            onClick={() => handleAll(true)}
+            disabled={discovering || lights.length === 0 || onCount === lights.length}
+            style={{
+              padding: '9px 18px',
+              borderRadius: '10px',
+              border: onCount === lights.length ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,214,0,0.3)',
+              cursor: onCount === lights.length ? 'default' : 'pointer',
+              background: onCount === lights.length ? 'rgba(255,255,255,0.02)' : 'rgba(255,214,0,0.08)',
+              color: onCount === lights.length ? 'var(--text-muted)' : '#FFD600',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.25s',
+              opacity: discovering ? 0.5 : 1
+            }}
+          >
+            <Lightbulb size={14} color={onCount === lights.length ? 'var(--text-muted)' : '#FFD600'} />
+            Todas ON
           </button>
-          <button onClick={() => handleAll(false)} disabled={discovering || lights.length === 0}
-            style={{ padding: '9px 18px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px', opacity: discovering ? 0.5 : 1 }}>
-            <WifiOff size={14} /> Todas OFF
+          <button
+            onClick={() => handleAll(false)}
+            disabled={discovering || lights.length === 0 || offCount === lights.length}
+            style={{
+              padding: '9px 18px',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              cursor: offCount === lights.length ? 'default' : 'pointer',
+              background: offCount === lights.length ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+              color: offCount === lights.length ? 'var(--text-muted)' : 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.25s',
+              opacity: discovering ? 0.5 : 1
+            }}
+          >
+            <WifiOff size={14} />
+            Todas OFF
           </button>
           <button onClick={discoverLights} disabled={discovering}
             style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', opacity: discovering ? 0.5 : 1 }}
