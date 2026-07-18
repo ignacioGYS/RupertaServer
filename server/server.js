@@ -1021,6 +1021,38 @@ app.get('/api/network/resolve-ip', async (req, res) => {
 });
 
 // 17. Network Info & Connected Devices API
+
+// Nmap cache: run at most once every 2 minutes to avoid polling overhead
+let nmapCache = { hosts: [], updatedAt: 0 };
+
+async function runNmapScan() {
+  const now = Date.now();
+  if (now - nmapCache.updatedAt < 2 * 60 * 1000) return nmapCache.hosts; // use cache
+  try {
+    const script = [
+      `subnets=$(ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | head -5)`,
+      `for s in $subnets; do nmap -sn --host-timeout 5s "$s" 2>/dev/null; done`
+    ].join(' ; ');
+    const out = await sshManager.exec(script);
+    const hosts = [];
+    let currentIp = null;
+    for (const line of out.split('\n')) {
+      const ipMatch = line.match(/Nmap scan report for (?:\S+ \()?([\d.]+)\)?/);
+      if (ipMatch) { currentIp = ipMatch[1]; continue; }
+      const macMatch = line.match(/MAC Address: ([0-9A-Fa-f:]{17})/);
+      if (macMatch && currentIp) {
+        hosts.push({ ip: currentIp, mac: macMatch[1].toLowerCase() });
+        currentIp = null;
+      }
+    }
+    nmapCache = { hosts, updatedAt: Date.now() };
+    return hosts;
+  } catch (e) {
+    console.error('[nmap] scan failed:', e.message);
+    return nmapCache.hosts; // return stale cache on error
+  }
+}
+
 app.get('/api/network/connections', async (req, res) => {
   try {
     const command = [
@@ -1235,18 +1267,22 @@ app.get('/api/network/connections', async (req, res) => {
     // Add the server's own interfaces to the neighbors list so it shows up in the UI
     interfaces.forEach(iface => {
       if (iface.ip && iface.ip !== '-' && iface.ip !== '127.0.0.1' && iface.mac && iface.mac !== '-') {
-        // Check if not already in neighbors list
         const exists = neighbors.some(n => n.ip === iface.ip);
         if (!exists) {
           const customName = nicknamesMap[iface.mac.toLowerCase()] || 'Este Servidor (RupertaServer)';
-          neighbors.push({
-            ip: iface.ip,
-            mac: iface.mac,
-            dev: iface.name,
-            state: 'ACTIVE',
-            customName
-          });
+          neighbors.push({ ip: iface.ip, mac: iface.mac, dev: iface.name, state: 'ACTIVE', customName });
         }
+      }
+    });
+
+    // Merge nmap cache — adds devices not in ARP table (e.g. IoT devices that never talked to the server)
+    // Trigger a background refresh (non-blocking), serve whatever is cached right now
+    runNmapScan().catch(() => {});
+    nmapCache.hosts.forEach(h => {
+      const exists = neighbors.some(n => n.ip === h.ip);
+      if (!exists && h.mac && h.mac !== '00:00:00:00:00:00') {
+        const customName = nicknamesMap[h.mac] || '';
+        neighbors.push({ ip: h.ip, mac: h.mac, dev: '-', state: 'REACHABLE', customName });
       }
     });
 
