@@ -1589,23 +1589,24 @@ app.post('/api/network/scan-ports', async (req, res) => {
 // 18. Trigger Network Ping Sweep/Scan API
 app.post('/api/network/scan', async (req, res) => {
   try {
-    // Use nmap directly if available — it's faster and more accurate than ping sweep
+    // Run nmap, wrap output in ===NMAP=== section so the parser captures it
     const script = `
 subnets=$(ip -o addr show | grep -v lo | awk '{print $4}' | grep -E '^(192\.168|10\.)' | head -5)
-for subnet in $subnets; do
-  if command -v nmap >/dev/null 2>&1; then
+echo "===NMAP==="
+if command -v nmap >/dev/null 2>&1; then
+  for subnet in $subnets; do
     nmap -sn --host-timeout 5s "$subnet" 2>/dev/null
-  else
+  done
+else
+  for subnet in $subnets; do
     base_ip=$(echo $subnet | cut -d/ -f1 | cut -d. -f1-3)
     mask=$(echo $subnet | cut -d/ -f2)
     if [ "$mask" = "24" ]; then
-      for i in $(seq 1 254); do
-        ping -c 1 -W 1 "$base_ip.$i" >/dev/null 2>&1 &
-      done
+      for i in $(seq 1 254); do ping -c 1 -W 1 "$base_ip.$i" >/dev/null 2>&1 & done
       wait
     fi
-  fi
-done
+  done
+fi
 echo "===NEIGHBORS==="
 ip neigh show 2>/dev/null || arp -an 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo "NONE"
 echo "===IFACES==="
@@ -1741,6 +1742,34 @@ ip -o addr show 2>/dev/null || echo "NONE"
             customName
           });
         }
+      }
+    });
+
+    // Parse NMAP section — "Nmap scan report for X.X.X.X" + "MAC Address: AA:BB:CC:DD:EE:FF"
+    const rawNmap = sections['NMAP'] || [];
+    const nmapHosts = [];
+    let currentNmapIp = null;
+    for (const line of rawNmap) {
+      const ipMatch = line.match(/Nmap scan report for (?:\S+ \()?([\d.]+)\)?/);
+      if (ipMatch) { currentNmapIp = ipMatch[1]; continue; }
+      const macMatch = line.match(/MAC Address: ([0-9A-Fa-f:]{17})/);
+      if (macMatch && currentNmapIp) {
+        nmapHosts.push({ ip: currentNmapIp, mac: macMatch[1].toLowerCase() });
+        currentNmapIp = null;
+      }
+    }
+
+    // Update the shared nmapCache so /api/network/connections also reflects fresh results
+    if (nmapHosts.length > 0) {
+      nmapCache = { hosts: nmapHosts, updatedAt: Date.now() };
+    }
+
+    // Merge nmap hosts that aren't already in the ARP table
+    nmapHosts.forEach(h => {
+      const exists = neighbors.some(n => n.ip === h.ip);
+      if (!exists && h.mac && h.mac !== '00:00:00:00:00:00') {
+        const customName = nicknamesMap[h.mac] || '';
+        neighbors.push({ ip: h.ip, mac: h.mac, dev: '-', state: 'REACHABLE', customName });
       }
     });
 
