@@ -821,6 +821,46 @@ app.get('/api/sftp/download-binary', async (req, res) => {
   }
 });
 
+// 16b. SFTP Download as tar.gz (supports files, folders and multi-selection)
+app.get('/api/sftp/download-zip', async (req, res) => {
+  // paths can be a single string or multiple: ?paths=/a/b&paths=/a/c
+  let rawPaths = req.query.paths;
+  if (!rawPaths) return res.status(400).json({ error: 'paths is required' });
+  if (!Array.isArray(rawPaths)) rawPaths = [rawPaths];
+  if (rawPaths.length === 0) return res.status(400).json({ error: 'paths is empty' });
+
+  try {
+    const conn = await sshManager.getConnection();
+
+    // Build tar command: -C to the common parent, then list relative targets
+    const firstPath = rawPaths[0];
+    const baseDir = path.posix.dirname(firstPath);
+    const names = rawPaths.map(p => `"${path.posix.basename(p)}"`).join(' ');
+    const tarCmd = `tar czf - -C "${baseDir}" ${names}`;
+
+    // Choose a sensible filename
+    const archiveName = rawPaths.length === 1
+      ? `${path.posix.basename(firstPath)}.tar.gz`
+      : 'seleccion.tar.gz';
+
+    res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+    res.setHeader('Content-Type', 'application/x-tar');
+
+    conn.exec(tarCmd, (err, stream) => {
+      if (err) return res.status(500).json({ error: err.message });
+      stream.pipe(res);
+      stream.on('close', (code) => {
+        if (!res.headersSent) res.end();
+      });
+      stream.stderr.on('data', (data) => {
+        console.warn('[download-zip] tar stderr:', data.toString());
+      });
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 // 17. SFTP Rename / Move within server
 app.post('/api/sftp/rename', async (req, res) => {
   const { oldPath, newPath } = req.body;

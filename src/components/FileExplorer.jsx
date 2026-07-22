@@ -190,22 +190,34 @@ export default function FileExplorer() {
 
   // ── Context Menu ────────────────────────────────────────────────────────────
 
+  const calcMenuPos = (clientX, clientY) => {
+    const menuW = 210;
+    const menuH = 320; // generous estimate
+    const x = clientX + menuW > window.innerWidth  ? window.innerWidth  - menuW - 8 : clientX;
+    const y = clientY + menuH > window.innerHeight ? window.innerHeight - menuH - 8 : clientY;
+    return { x, y };
+  };
+
   const handleContextMenu = (e, file) => {
     e.preventDefault();
+    e.stopPropagation();
     if (file && !selected.has(file.name)) setSelected(new Set([file.name]));
-    setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, file });
+    const { x, y } = calcMenuPos(e.clientX, e.clientY);
+    setCtxMenu({ visible: true, x, y, file });
   };
 
   const handleBgContextMenu = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setSelected(new Set());
-    setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, file: null });
+    const { x, y } = calcMenuPos(e.clientX, e.clientY);
+    setCtxMenu({ visible: true, x, y, file: null });
   };
 
   useEffect(() => {
     const hide = () => setCtxMenu(m => ({ ...m, visible: false }));
-    window.addEventListener('click', hide);
-    return () => window.removeEventListener('click', hide);
+    window.addEventListener('mousedown', hide);
+    return () => window.removeEventListener('mousedown', hide);
   }, []);
 
   // ── Clipboard ───────────────────────────────────────────────────────────────
@@ -362,6 +374,22 @@ export default function FileExplorer() {
     const a = document.createElement('a');
     a.href = url;
     a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setCtxMenu(m => ({ ...m, visible: false }));
+  };
+
+  // Download folder or multiple items as tar.gz
+  const handleDownloadZip = (paths) => {
+    const params = paths.map(p => `paths=${encodeURIComponent(p)}`).join('&');
+    const archiveName = paths.length === 1
+      ? `${paths[0].split('/').pop()}.tar.gz`
+      : 'seleccion.tar.gz';
+    const url = `/api/sftp/download-zip?${params}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = archiveName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -775,13 +803,24 @@ export default function FileExplorer() {
 
       {/* Context Menu */}
       {ctxMenu.visible && (
-        <div className="fe-ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }} onClick={e => e.stopPropagation()}>
+        <div
+          className="fe-ctx-menu"
+          style={{ top: ctxMenu.y, left: ctxMenu.x }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onContextMenu={e => e.preventDefault()}
+        >
           {ctxMenu.file ? (
             <>
               {ctxMenu.file.isDirectory ? (
-                <button className="fe-ctx-item" onClick={() => { navigateTo(`${currentPath}/${ctxMenu.file.name}`); setCtxMenu(m => ({ ...m, visible: false })); }}>
-                  <Folder size={14} /> Abrir
-                </button>
+                <>
+                  <button className="fe-ctx-item" onClick={() => { navigateTo(`${currentPath}/${ctxMenu.file.name}`); setCtxMenu(m => ({ ...m, visible: false })); }}>
+                    <Folder size={14} /> Abrir
+                  </button>
+                  <button className="fe-ctx-item" onClick={() => handleDownloadZip([`${currentPath}/${ctxMenu.file.name}`])}>
+                    <Download size={14} /> Descargar (.tar.gz)
+                  </button>
+                </>
               ) : (
                 <>
                   {isEditable(ctxMenu.file.name) && (
@@ -793,6 +832,11 @@ export default function FileExplorer() {
                     <Download size={14} /> Descargar
                   </button>
                 </>
+              )}
+              {selected.size > 1 && (
+                <button className="fe-ctx-item" onClick={() => handleDownloadZip(getSelectedPaths())}>
+                  <Download size={14} /> Descargar selección ({selected.size}) .tar.gz
+                </button>
               )}
               <div className="fe-ctx-divider" />
               <button className="fe-ctx-item" onClick={() => { startRename(ctxMenu.file.name); setCtxMenu(m => ({ ...m, visible: false })); }}>
