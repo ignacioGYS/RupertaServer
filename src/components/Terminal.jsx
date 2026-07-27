@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Terminal as Xterm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
-import { RefreshCw, Power, RotateCcw, AlertTriangle, X } from 'lucide-react';
+import { RefreshCw, Power, RotateCcw, AlertTriangle, X, PackageSearch, PackageCheck, Trash2 } from 'lucide-react';
 import 'xterm/css/xterm.css';
 
 // Modal de confirmacion
@@ -224,6 +224,17 @@ export default function Terminal() {
     setTimeout(() => setPowerStatus(null), 5000);
   };
 
+  // Injects a command into the active xterm WebSocket (as if the user typed it)
+  const sendCommand = (cmd) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      alert('La terminal no está conectada. Abrí la terminal primero.');
+      return;
+    }
+    // Write the command text + Enter
+    ws.send(JSON.stringify({ type: 'data', data: cmd + '\r' }));
+  };
+
   return (
     <>
       {modal && (
@@ -252,6 +263,57 @@ export default function Terminal() {
                 </button>
               </>
             )}
+
+            <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
+
+            {/* ── Quick apt Actions ─────────────────────────────── */}
+            <button
+              id="apt-update-btn"
+              onClick={() => sendCommand('sudo apt update && echo "" && apt list --upgradable 2>/dev/null')}
+              title="Buscar actualizaciones disponibles (apt update)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                background: 'rgba(0,242,254,0.08)', border: '1px solid rgba(0,242,254,0.25)',
+                color: '#00F2FE', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,242,254,0.18)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,242,254,0.08)'}
+            >
+              <PackageSearch size={14} /> Update
+            </button>
+
+            <button
+              id="apt-upgrade-btn"
+              onClick={() => sendCommand('sudo apt upgrade -y')}
+              title="Instalar todas las actualizaciones disponibles (apt upgrade)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                background: 'rgba(0,230,118,0.08)', border: '1px solid rgba(0,230,118,0.25)',
+                color: '#00E676', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,230,118,0.2)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,230,118,0.08)'}
+            >
+              <PackageCheck size={14} /> Upgrade
+            </button>
+
+            <button
+              id="apt-maintenance-btn"
+              onClick={() => sendCommand('sudo apt autoremove -y && sudo apt autoclean && sudo journalctl --vacuum-time=7d && echo "✔ Mantenimiento completado"')}
+              title="Limpieza: autoremove + autoclean + vaciar logs antiguos"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                background: 'rgba(224,64,251,0.08)', border: '1px solid rgba(224,64,251,0.25)',
+                color: '#E040FB', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(224,64,251,0.2)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(224,64,251,0.08)'}
+            >
+              <Trash2 size={14} /> Mantenimiento
+            </button>
 
             <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
 
