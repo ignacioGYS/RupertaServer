@@ -1006,9 +1006,10 @@ app.post('/api/system/update', async (req, res) => {
         await sshManager.exec(`cd ${remotePath} && git pull origin main`);
         console.log('[System Update] Rebuilding containers...');
         await sshManager.exec(`cd ${remotePath} && docker compose build`);
-        console.log('[System Update] Restarting container...');
-        await sshManager.exec(`cd ${remotePath} && docker compose up -d`);
-        console.log('[System Update] Finished successfully!');
+        console.log('[System Update] Restarting container with detached nohup...');
+        // We use nohup with sleep to allow this SSH session to close cleanly before docker compose recreates the container
+        await sshManager.exec(`cd ${remotePath} && nohup sh -c "sleep 2 && docker compose up -d" >/dev/null 2>&1 &`);
+        console.log('[System Update] Detached compose up command executed!');
       } catch (err) {
         console.error('[System Update] Failed:', err.message);
       }
