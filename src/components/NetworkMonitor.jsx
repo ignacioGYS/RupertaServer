@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X, Zap } from 'lucide-react';
+import InternetHealthPanel from './InternetHealthPanel';
 
 export default function NetworkMonitor() {
   const [data, setData] = useState({
@@ -575,6 +576,9 @@ export default function NetworkMonitor() {
           <span className="metric-card-subtext">Equipos descubiertos en subred</span>
         </div>
       </div>
+
+      {/* Internet Health — Latency, Microcuts, Speed Test */}
+      <InternetHealthPanel />
 
       {/* Network Interfaces */}
       <div className="glass-card" style={{ padding: '24px' }}>

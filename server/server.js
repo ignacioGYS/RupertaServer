@@ -30,6 +30,14 @@ const lastMetricsCache = {
 // System Info Cache
 let systemInfoCache = null;
 
+// ── Network Health Monitoring ──────────────────────────────────────────────
+// Ring buffer: latency samples for the last ~5 minutes (60 samples @ 5s interval)
+const HEALTH_RING_SIZE = 60;
+const healthRing = []; // { ts, targets: { '8.8.8.8': latencyMs|null, '1.1.1.1': latencyMs|null, gateway: latencyMs|null } }
+// Active (open) microcut events keyed by target
+const activeMicrocuts = {}; // { [target]: { id, startedAt, maxLatency } }
+
+
 // 1. Connection Status API
 app.get('/api/connection-status', async (req, res) => {
   try {
@@ -1968,6 +1976,302 @@ ip -o addr show 2>/dev/null || echo "NONE"
     res.status(500).json({ error: err.message });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 19. Network Health — Real-time latency, jitter, packet loss
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/network/health', (req, res) => {
+  // Compute aggregated stats from the ring buffer
+  const samples = [...healthRing];
+  if (samples.length === 0) {
+    return res.json({
+      status: 'unknown',
+      targets: {},
+      history: [],
+      jitter: 0,
+      packetLoss: 0,
+      lastUpdate: null
+    });
+  }
+
+  // Per-target latest latency
+  const latest = samples[samples.length - 1];
+  const targets = {};
+  let totalPings = 0;
+  let failedPings = 0;
+  const latencies = [];
+
+  for (const s of samples) {
+    for (const [tgt, lat] of Object.entries(s.targets)) {
+      totalPings++;
+      if (lat === null) {
+        failedPings++;
+      } else {
+        latencies.push(lat);
+      }
+    }
+  }
+
+  // Latest per-target
+  for (const [tgt, lat] of Object.entries(latest.targets)) {
+    targets[tgt] = lat;
+  }
+
+  // Jitter: average difference between consecutive latency samples (for primary target 8.8.8.8)
+  const primaryLatencies = samples.map(s => s.targets['8.8.8.8']).filter(v => v !== null && v !== undefined);
+  let jitter = 0;
+  if (primaryLatencies.length > 1) {
+    let diffSum = 0;
+    for (let i = 1; i < primaryLatencies.length; i++) {
+      diffSum += Math.abs(primaryLatencies[i] - primaryLatencies[i - 1]);
+    }
+    jitter = Math.round((diffSum / (primaryLatencies.length - 1)) * 100) / 100;
+  }
+
+  // Packet loss percentage
+  const packetLoss = totalPings > 0 ? Math.round((failedPings / totalPings) * 10000) / 100 : 0;
+
+  // Overall status
+  const latestPrimary = latest.targets['8.8.8.8'];
+  let status = 'online';
+  if (latestPrimary === null) {
+    status = 'offline';
+  } else if (latestPrimary > 200 || packetLoss > 10) {
+    status = 'degraded';
+  }
+
+  // History for chart (last 60 samples)
+  const history = samples.map(s => ({
+    ts: s.ts,
+    google: s.targets['8.8.8.8'] ?? null,
+    cloudflare: s.targets['1.1.1.1'] ?? null,
+    gateway: s.targets['gateway'] ?? null
+  }));
+
+  res.json({
+    status,
+    targets,
+    history,
+    jitter,
+    packetLoss,
+    lastUpdate: latest.ts
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 20. Network Microcuts History
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/network/microcuts', async (req, res) => {
+  try {
+    const hours = parseInt(req.query.hours) || 24;
+    const result = await query(
+      `SELECT id, started_at, ended_at, duration_ms, target, type, max_latency_ms
+       FROM network_microcuts
+       WHERE started_at >= NOW() - INTERVAL '1 hour' * $1
+       ORDER BY started_at DESC
+       LIMIT 200`,
+      [hours]
+    );
+    res.json({
+      events: result.rows,
+      total: result.rows.length,
+      hours
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 21. Speed Test — Run speedtest-cli via SSH
+// ═══════════════════════════════════════════════════════════════════════════
+app.post('/api/network/speedtest', async (req, res) => {
+  try {
+    // Try speedtest-cli (python) then speedtest (ookla) then fallback
+    const output = await sshManager.exec(
+      `which speedtest-cli > /dev/null 2>&1 && speedtest-cli --json 2>/dev/null || ` +
+      `which speedtest > /dev/null 2>&1 && speedtest --format=json 2>/dev/null || ` +
+      `echo '{"error":"speedtest-cli not found"}'`
+    );
+
+    let parsed;
+    try {
+      parsed = JSON.parse(output);
+    } catch (e) {
+      return res.status(500).json({ error: 'No se pudo parsear el resultado del speedtest', raw: output.substring(0, 500) });
+    }
+
+    if (parsed.error) {
+      return res.status(404).json({ error: parsed.error, hint: 'Instalar con: sudo apt install speedtest-cli  o  pip install speedtest-cli' });
+    }
+
+    // speedtest-cli --json returns bits/s; ookla speedtest returns bytes/s
+    let download, upload, ping, serverName, serverLocation;
+
+    if (parsed.download && parsed.upload && parsed.server) {
+      // speedtest-cli format (bits per second)
+      download = Math.round((parsed.download / 1_000_000) * 100) / 100;
+      upload = Math.round((parsed.upload / 1_000_000) * 100) / 100;
+      ping = Math.round((parsed.server?.latency || parsed.ping || 0) * 100) / 100;
+      serverName = parsed.server?.sponsor || parsed.server?.name || 'Unknown';
+      serverLocation = `${parsed.server?.name || ''}, ${parsed.server?.country || ''}`.trim().replace(/^,\s*/, '');
+    } else if (parsed.type === 'result') {
+      // Ookla speedtest format (bytes per second)
+      download = Math.round((parsed.download?.bandwidth * 8 / 1_000_000) * 100) / 100;
+      upload = Math.round((parsed.upload?.bandwidth * 8 / 1_000_000) * 100) / 100;
+      ping = Math.round((parsed.ping?.latency || 0) * 100) / 100;
+      serverName = parsed.server?.name || 'Unknown';
+      serverLocation = `${parsed.server?.location || ''}, ${parsed.server?.country || ''}`.trim().replace(/^,\s*/, '');
+    } else {
+      return res.status(500).json({ error: 'Formato de speedtest no reconocido', raw: output.substring(0, 500) });
+    }
+
+    // Save to DB
+    try {
+      await query(
+        `INSERT INTO network_speedtests (download_mbps, upload_mbps, ping_ms, server_name, server_location) VALUES ($1, $2, $3, $4, $5)`,
+        [download, upload, ping, serverName, serverLocation]
+      );
+    } catch (dbErr) {
+      console.error('[DB] Error saving speedtest:', dbErr.message);
+    }
+
+    res.json({ download, upload, ping, serverName, serverLocation });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 22. Speed Test History
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/network/speedtest/history', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const result = await query(
+      `SELECT id, timestamp, download_mbps, upload_mbps, ping_ms, server_name, server_location
+       FROM network_speedtests
+       ORDER BY timestamp DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ tests: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Background: Network Health Monitor — Ping every 5 seconds
+// ═══════════════════════════════════════════════════════════════════════════
+const PING_TARGETS = ['8.8.8.8', '1.1.1.1'];
+const HIGH_LATENCY_THRESHOLD = 1000; // ms
+
+async function runHealthPing() {
+  if (!sshManager.isConnected) return;
+
+  try {
+    // Detect gateway
+    let gateway = 'gateway';
+    try {
+      const gwOut = await sshManager.exec(`ip route | awk '/default via/{print $3}' | head -1`);
+      if (gwOut && gwOut.trim()) gateway = gwOut.trim();
+    } catch (_) {}
+
+    const allTargets = [...PING_TARGETS];
+    if (gateway !== 'gateway') allTargets.push(gateway);
+
+    // Run pings in parallel via a single SSH command
+    const pingCmds = allTargets.map(t =>
+      `(ping -c 1 -W 2 ${t} 2>/dev/null | grep 'time=' | sed 's/.*time=\\([0-9.]*\\).*/\\1/' || echo "FAIL")`
+    );
+    const script = pingCmds.join(' & ') + ' & wait';
+    
+    // Alternative: run sequentially for reliability
+    const seqScript = allTargets.map(t =>
+      `echo -n "${t}:"; ping -c 1 -W 2 ${t} 2>/dev/null | grep 'time=' | sed 's/.*time=\\([0-9.]*\\).*/\\1/' || echo "FAIL"`
+    ).join('; ');
+
+    const output = await sshManager.exec(seqScript);
+    const lines = output.split('\n').filter(Boolean);
+
+    const sample = { ts: Date.now(), targets: {} };
+
+    for (const line of lines) {
+      const [target, val] = line.split(':');
+      if (!target) continue;
+      const tgtKey = PING_TARGETS.includes(target) ? target : 'gateway';
+      
+      if (val && val.trim() !== 'FAIL' && val.trim() !== '') {
+        const latency = parseFloat(val.trim());
+        sample.targets[tgtKey] = isNaN(latency) ? null : Math.round(latency * 100) / 100;
+      } else {
+        sample.targets[tgtKey] = null;
+      }
+    }
+
+    // Push to ring buffer
+    healthRing.push(sample);
+    if (healthRing.length > HEALTH_RING_SIZE) healthRing.shift();
+
+    // Microcut detection
+    for (const [tgtKey, latency] of Object.entries(sample.targets)) {
+      const isFail = latency === null;
+      const isHighLatency = latency !== null && latency > HIGH_LATENCY_THRESHOLD;
+
+      if (isFail || isHighLatency) {
+        if (!activeMicrocuts[tgtKey]) {
+          // Open new microcut event
+          const type = isFail ? 'outage' : 'high_latency';
+          try {
+            const result = await query(
+              `INSERT INTO network_microcuts (started_at, target, type, max_latency_ms) VALUES (NOW(), $1, $2, $3) RETURNING id`,
+              [tgtKey, type, latency || 0]
+            );
+            activeMicrocuts[tgtKey] = {
+              id: result.rows[0].id,
+              startedAt: Date.now(),
+              maxLatency: latency || 0
+            };
+          } catch (e) {
+            console.error('[Health] Error inserting microcut:', e.message);
+          }
+        } else {
+          // Update max latency if higher
+          if (latency && latency > activeMicrocuts[tgtKey].maxLatency) {
+            activeMicrocuts[tgtKey].maxLatency = latency;
+            try {
+              await query(
+                `UPDATE network_microcuts SET max_latency_ms = $1 WHERE id = $2`,
+                [latency, activeMicrocuts[tgtKey].id]
+              );
+            } catch (_) {}
+          }
+        }
+      } else {
+        // Recovery — close the active microcut
+        if (activeMicrocuts[tgtKey]) {
+          const mc = activeMicrocuts[tgtKey];
+          const durationMs = Date.now() - mc.startedAt;
+          try {
+            await query(
+              `UPDATE network_microcuts SET ended_at = NOW(), duration_ms = $1 WHERE id = $2`,
+              [durationMs, mc.id]
+            );
+          } catch (_) {}
+          delete activeMicrocuts[tgtKey];
+        }
+      }
+    }
+  } catch (err) {
+    // SSH not connected, just skip
+  }
+}
+
+// Start health ping loop (every 5 seconds)
+setInterval(runHealthPing, 5000);
+// Run once on startup after a short delay
+setTimeout(runHealthPing, 3000);
 
 // Serve built frontend in production (after npm run build)
 if (fs.existsSync(distPath)) {

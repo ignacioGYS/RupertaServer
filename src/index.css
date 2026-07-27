@@ -2110,3 +2110,679 @@ section:has(.fe-root) {
   background: #ff5555;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Internet Health Panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.inet-health-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Status Row ───────────────────────────────────────────────────────────── */
+.inet-status-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.4fr) repeat(4, 1fr);
+  gap: 14px;
+}
+
+.inet-status-card {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.inet-status-orb {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.inet-status-orb::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: var(--status-color);
+  opacity: 0.15;
+  animation: inet-pulse 2.5s ease-in-out infinite;
+}
+
+.inet-status-orb.offline::before {
+  animation: inet-pulse-fast 1.2s ease-in-out infinite;
+}
+
+.inet-status-orb.unknown::before {
+  animation: none;
+  opacity: 0.05;
+}
+
+.inet-status-orb-inner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid var(--status-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--status-color);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--status-color) 30%, transparent);
+}
+
+@keyframes inet-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.15; }
+  50% { transform: scale(1.25); opacity: 0.05; }
+}
+
+@keyframes inet-pulse-fast {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.4); opacity: 0; }
+}
+
+.inet-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inet-status-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.3px;
+}
+
+.inet-status-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Metric Mini Cards ────────────────────────────────────────────────────── */
+.inet-metric-mini {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inet-metric-mini-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.inet-metric-mini-title {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.inet-metric-mini-badge {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  opacity: 0.7;
+}
+
+.inet-metric-mini-value {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+/* ── Charts Row ───────────────────────────────────────────────────────────── */
+.inet-charts-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 16px;
+}
+
+.inet-chart-card,
+.inet-microcuts-card {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inet-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.inet-section-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inet-section-sub {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.inet-gw-badge {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: #E040FB;
+  background: rgba(224, 64, 251, 0.08);
+  border: 1px solid rgba(224, 64, 251, 0.2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.inet-chart-wrapper {
+  min-height: 220px;
+}
+
+.inet-chart-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.inet-chart-legend {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+}
+
+.inet-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.inet-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────── */
+.inet-tooltip {
+  background: rgba(16, 21, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.inet-tooltip-time {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.inet-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.inet-tooltip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inet-tooltip-row strong {
+  margin-left: auto;
+  color: var(--text-primary);
+}
+
+/* ── Microcuts ────────────────────────────────────────────────────────────── */
+.inet-select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.inet-microcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.inet-microcuts-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.inet-microcuts-empty-sub {
+  font-size: 0.72rem;
+  opacity: 0.6;
+}
+
+.inet-microcut-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.015);
+  transition: background var(--transition-fast);
+}
+
+.inet-microcut-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.inet-microcut-indicator {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 5px;
+}
+
+.inet-microcut-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inet-microcut-dot.resolved {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.inet-microcut-dot.active {
+  background: #FF1744;
+  box-shadow: 0 0 8px rgba(255, 23, 68, 0.5);
+  animation: inet-pulse-fast 1.2s ease-in-out infinite;
+}
+
+.inet-microcut-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.inet-microcut-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inet-microcut-type {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.inet-microcut-type.outage {
+  color: #FF1744;
+  background: rgba(255, 23, 68, 0.1);
+}
+
+.inet-microcut-type.high_latency {
+  color: #FF9100;
+  background: rgba(255, 145, 0, 0.1);
+}
+
+.inet-microcut-target {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.inet-microcut-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inet-microcut-time {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inet-microcut-duration {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.inet-microcut-latency {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ── Speed Test ───────────────────────────────────────────────────────────── */
+.inet-speedtest-card {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inet-speedtest-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #00F2FE 0%, #4FACFE 100%);
+  color: #0a1628;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  box-shadow: 0 4px 16px rgba(0, 242, 254, 0.2);
+}
+
+.inet-speedtest-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(0, 242, 254, 0.35);
+}
+
+.inet-speedtest-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.inet-speedtest-btn.testing {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.2));
+  color: #4FACFE;
+  border: 1px solid rgba(79, 172, 254, 0.3);
+  box-shadow: none;
+}
+
+.inet-spin {
+  animation: inet-spinner 1s linear infinite;
+}
+
+@keyframes inet-spinner {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.inet-speedtest-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(255, 23, 68, 0.06);
+  border: 1px solid rgba(255, 23, 68, 0.15);
+  color: #FF5252;
+  font-size: 0.82rem;
+}
+
+.inet-speedtest-running {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.inet-speedtest-running-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.inet-speedtest-pulse {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.3), rgba(79, 172, 254, 0.15));
+  animation: inet-test-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes inet-test-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.3); opacity: 0.3; }
+}
+
+/* Speed Gauge */
+.inet-speedtest-results {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  animation: inet-fadeIn 0.6s ease-out;
+}
+
+@keyframes inet-fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.inet-speedtest-gauges {
+  display: flex;
+  gap: 32px;
+}
+
+.speed-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.speed-gauge svg {
+  overflow: visible;
+}
+
+.speed-gauge-value {
+  position: absolute;
+  top: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.speed-gauge-number {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.speed-gauge-unit {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.speed-gauge-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.inet-speedtest-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.inet-speedtest-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.inet-speedtest-detail-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.inet-speedtest-detail-value {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* ── Speed History ────────────────────────────────────────────────────────── */
+.inet-history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px 0 0;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: color var(--transition-fast);
+}
+
+.inet-history-toggle:hover {
+  color: var(--text-primary);
+}
+
+.inet-speed-history {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: inet-fadeIn 0.4s ease-out;
+}
+
+.inet-speed-history-chart {
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.15);
+  padding: 14px 10px;
+}
+
+.inet-speed-history-table {
+  overflow-x: auto;
+}
+
+.inet-speed-history-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.inet-speed-history-table th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.inet-speed-history-table th svg {
+  vertical-align: middle;
+  margin-right: 3px;
+}
+
+.inet-speed-history-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+
+.inet-speed-history-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.inet-table-time {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.inet-table-server {
+  color: var(--text-secondary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .inet-status-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .inet-charts-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .inet-status-row {
+    grid-template-columns: 1fr;
+  }
+  .inet-speedtest-gauges {
+    flex-direction: column;
+    gap: 16px;
+  }
+}

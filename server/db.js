@@ -67,6 +67,35 @@ export const initializeDb = async () => {
       console.warn('[DB Migration] Notice: Columns already exist or migration skipped:', err.message);
     }
 
+    // Network micro-outage tracking table
+    await query(`
+      CREATE TABLE IF NOT EXISTS network_microcuts (
+        id SERIAL PRIMARY KEY,
+        started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        ended_at TIMESTAMP WITH TIME ZONE,
+        duration_ms INTEGER,
+        target VARCHAR(50),
+        type VARCHAR(20),
+        max_latency_ms INTEGER
+      )
+    `);
+
+    // Speed test history table
+    await query(`
+      CREATE TABLE IF NOT EXISTS network_speedtests (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        download_mbps REAL,
+        upload_mbps REAL,
+        ping_ms REAL,
+        server_name VARCHAR(255),
+        server_location VARCHAR(255)
+      )
+    `);
+
+    await query(`CREATE INDEX IF NOT EXISTS idx_network_microcuts_time ON network_microcuts (started_at)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_network_speedtests_time ON network_speedtests (timestamp)`);
+
     console.log('✅ Base de datos PostgreSQL lista y conectada.');
   } catch (error) {
     console.error('❌ Error conectando o inicializando PostgreSQL:', error.message);
