@@ -66,6 +66,13 @@ function formatPermissions(mode) {
   return (mode & 0o777).toString(8).padStart(3, '0');
 }
 
+const joinPath = (parent, name) => {
+  if (!parent) return name;
+  if (parent === '/') return `/${name}`;
+  if (parent.endsWith('/')) return `${parent}${name}`;
+  return `${parent}/${name}`;
+};
+
 export default function FileExplorer() {
   const [currentPath, setCurrentPath]   = useState('.');
   const [files, setFiles]               = useState([]);
@@ -180,7 +187,7 @@ export default function FileExplorer() {
   };
 
   const handleItemDoubleClick = (file) => {
-    if (file.isDirectory) navigateTo(`${currentPath}/${file.name}`);
+    if (file.isDirectory) navigateTo(joinPath(currentPath, file.name));
     else if (isEditable(file.name)) handleEdit(file);
     else handleDownload(file);
   };
@@ -224,7 +231,7 @@ export default function FileExplorer() {
 
   const getSelectedPaths = () => {
     const sel = selected.size > 0 ? [...selected] : (ctxMenu.file ? [ctxMenu.file.name] : []);
-    return sel.map(name => `${currentPath}/${name}`);
+    return sel.map(name => joinPath(currentPath, name));
   };
 
   const handleCopy = () => {
@@ -248,7 +255,7 @@ export default function FileExplorer() {
     try {
       for (const srcPath of clipboard.paths) {
         const name = srcPath.split('/').pop();
-        const destPath = `${currentPath}/${name}`;
+        const destPath = joinPath(currentPath, name);
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -291,8 +298,8 @@ export default function FileExplorer() {
       setRenaming({ active: false, name: '', original: '' });
       return;
     }
-    const oldPath = `${currentPath}/${renaming.original}`;
-    const newPath = `${currentPath}/${renaming.name}`;
+    const oldPath = joinPath(currentPath, renaming.original);
+    const newPath = joinPath(currentPath, renaming.name);
     try {
       const res = await fetch('/api/sftp/rename', {
         method: 'POST',
@@ -313,29 +320,38 @@ export default function FileExplorer() {
   const triggerDelete = () => {
     const sel = selected.size > 0 ? [...selected] : (ctxMenu.file ? [ctxMenu.file.name] : []);
     if (!sel.length) return;
-    const paths = sel.map(name => `${currentPath}/${name}`);
+    const paths = sel.map(name => joinPath(currentPath, name));
     setDeleteModal({ open: true, paths, names: sel });
     setCtxMenu(m => ({ ...m, visible: false }));
   };
 
   const confirmDelete = async () => {
-    for (let i = 0; i < deleteModal.paths.length; i++) {
-      const filePath = deleteModal.paths[i];
-      const file = files.find(f => f.name === deleteModal.names[i]);
-      await fetch('/api/sftp/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, isDirectory: file?.isDirectory || false })
-      });
+    try {
+      for (let i = 0; i < deleteModal.paths.length; i++) {
+        const filePath = deleteModal.paths[i];
+        const file = files.find(f => f.name === deleteModal.names[i]);
+        const res = await fetch('/api/sftp/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filePath, isDirectory: file?.isDirectory || false })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'No se pudo eliminar el elemento');
+        }
+      }
+      fetchDirectory(currentPath, false);
+    } catch (e) {
+      alert(`Error al eliminar: ${e.message}`);
+    } finally {
+      setDeleteModal({ open: false, paths: [], names: [] });
     }
-    setDeleteModal({ open: false, paths: [], names: [] });
-    fetchDirectory(currentPath, false);
   };
 
   // ── Edit ────────────────────────────────────────────────────────────────────
 
   const handleEdit = async (file) => {
-    const filePath = `${currentPath}/${file.name}`;
+    const filePath = joinPath(currentPath, file.name);
     setEditor({ open: true, filePath, fileName: file.name, content: '', saving: false, loading: true });
     setCtxMenu(m => ({ ...m, visible: false }));
     try {
@@ -369,7 +385,7 @@ export default function FileExplorer() {
   // ── Download ────────────────────────────────────────────────────────────────
 
   const handleDownload = (file) => {
-    const filePath = `${currentPath}/${file.name}`;
+    const filePath = joinPath(currentPath, file.name);
     const url = `/api/sftp/download-binary?path=${encodeURIComponent(filePath)}`;
     const a = document.createElement('a');
     a.href = url;
@@ -453,9 +469,7 @@ export default function FileExplorer() {
     const newUploads = entries.map((e, i) => ({
       id: `up-${ts}-${i}`,
       name: e.relPath,
-      destPath: currentPath.endsWith('/')
-        ? `${currentPath}${e.relPath}`
-        : `${currentPath}/${e.relPath}`,
+      destPath: joinPath(currentPath, e.relPath),
       progress: 0,
       status: 'uploading'
     }));
@@ -520,18 +534,26 @@ export default function FileExplorer() {
   };
 
   const confirmCreate = async () => {
-    const targetPath = `${currentPath}/${createModal.value}`;
+    const targetPath = joinPath(currentPath, createModal.value);
     try {
       if (createModal.type === 'folder') {
-        await fetch('/api/sftp/create-directory', {
+        const res = await fetch('/api/sftp/create-directory', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: targetPath })
         });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'No se pudo crear la carpeta');
+        }
       } else {
-        await fetch('/api/sftp/write', {
+        const res = await fetch('/api/sftp/write', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: targetPath, content: '' })
         });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'No se pudo crear el archivo');
+        }
       }
       fetchDirectory(currentPath, false);
     } catch (e) {
@@ -814,10 +836,10 @@ export default function FileExplorer() {
             <>
               {ctxMenu.file.isDirectory ? (
                 <>
-                  <button className="fe-ctx-item" onClick={() => { navigateTo(`${currentPath}/${ctxMenu.file.name}`); setCtxMenu(m => ({ ...m, visible: false })); }}>
+                  <button className="fe-ctx-item" onClick={() => { navigateTo(joinPath(currentPath, ctxMenu.file.name)); setCtxMenu(m => ({ ...m, visible: false })); }}>
                     <Folder size={14} /> Abrir
                   </button>
-                  <button className="fe-ctx-item" onClick={() => handleDownloadZip([`${currentPath}/${ctxMenu.file.name}`])}>
+                  <button className="fe-ctx-item" onClick={() => handleDownloadZip([joinPath(currentPath, ctxMenu.file.name)])}>
                     <Download size={14} /> Descargar (.tar.gz)
                   </button>
                 </>
