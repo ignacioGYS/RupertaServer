@@ -79,6 +79,7 @@ export default function InternetHealthPanel() {
   const [speedError, setSpeedError] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [microcutHours, setMicrocutHours] = useState(24);
+  const [activeInetTab, setActiveInetTab] = useState('estado'); // 'estado' | 'microcortes' | 'speedtest'
   const isMounted = useRef(true);
 
   // ── Fetch health data ──────────────────────────────────────────────────
@@ -218,7 +219,7 @@ export default function InternetHealthPanel() {
 
   return (
     <div className="inet-health-panel">
-      {/* ── Status + Metrics Row ─────────────────────────────────── */}
+      {/* ── Always-visible: Status + Latency mini-cards ───────────── */}
       <div className="inet-status-row">
         {/* Big status indicator */}
         <div className="glass-card inet-status-card">
@@ -237,7 +238,7 @@ export default function InternetHealthPanel() {
           </div>
         </div>
 
-        {/* Latency cards */}
+        {/* Latency mini-cards */}
         <div className="glass-card inet-metric-mini">
           <div className="inet-metric-mini-header">
             <span className="inet-metric-mini-title">Google DNS</span>
@@ -279,9 +280,29 @@ export default function InternetHealthPanel() {
         </div>
       </div>
 
-      {/* ── Latency Chart + Microcuts ────────────────────────────── */}
-      <div className="inet-charts-row">
-        {/* Latency Chart */}
+      {/* ── Internal Tabs ─────────────────────────────────────────── */}
+      <div className="inet-tabs">
+        {[
+          { id: 'estado', label: 'Estado', icon: <Activity size={14} /> },
+          { id: 'microcortes', label: 'Microcortes', icon: <AlertTriangle size={14} /> },
+          { id: 'speedtest', label: 'Speed Test', icon: <Gauge size={14} /> },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            className={`inet-tab-btn ${activeInetTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveInetTab(tab.id)}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.id === 'microcortes' && microcuts.total > 0 && (
+              <span className="inet-tab-badge">{microcuts.total}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Estado (Latency Chart) ───────────────────────────── */}
+      {activeInetTab === 'estado' && (
         <div className="glass-card inet-chart-card">
           <div className="inet-section-header">
             <div>
@@ -333,15 +354,16 @@ export default function InternetHealthPanel() {
             )}
           </div>
 
-          {/* Legend */}
           <div className="inet-chart-legend">
             <span className="inet-legend-item"><span className="inet-legend-dot" style={{ background: '#4FACFE' }} /> Google DNS</span>
             <span className="inet-legend-item"><span className="inet-legend-dot" style={{ background: '#FF9100' }} /> Cloudflare</span>
             <span className="inet-legend-item"><span className="inet-legend-dot" style={{ background: '#E040FB' }} /> Gateway</span>
           </div>
         </div>
+      )}
 
-        {/* Microcuts Timeline */}
+      {/* ── Tab: Microcortes ─────────────────────────────────────── */}
+      {activeInetTab === 'microcortes' && (
         <div className="glass-card inet-microcuts-card">
           <div className="inet-section-header">
             <div>
@@ -403,141 +425,143 @@ export default function InternetHealthPanel() {
             )}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* ── Speed Test ───────────────────────────────────────────── */}
-      <div className="glass-card inet-speedtest-card">
-        <div className="inet-section-header">
-          <div>
-            <h3 className="inet-section-title">
-              <Gauge size={18} style={{ color: '#00F2FE' }} />
-              Test de Velocidad
-            </h3>
-            <p className="inet-section-sub">Ejecuta speedtest-cli en el servidor remoto</p>
-          </div>
-          <button
-            className={`inet-speedtest-btn ${speedTesting ? 'testing' : ''}`}
-            onClick={runSpeedTest}
-            disabled={speedTesting}
-          >
-            <RefreshCw size={15} className={speedTesting ? 'inet-spin' : ''} />
-            {speedTesting ? 'Midiendo...' : 'Medir Velocidad'}
-          </button>
-        </div>
-
-        {speedError && (
-          <div className="inet-speedtest-error">
-            <AlertTriangle size={16} />
+      {/* ── Tab: Speed Test ──────────────────────────────────────── */}
+      {activeInetTab === 'speedtest' && (
+        <div className="glass-card inet-speedtest-card">
+          <div className="inet-section-header">
             <div>
-              {speedError.split('\n').map((line, i) => (
-                <p key={i} style={i > 0 ? { fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' } : {}}>{line}</p>
-              ))}
+              <h3 className="inet-section-title">
+                <Gauge size={18} style={{ color: '#00F2FE' }} />
+                Test de Velocidad
+              </h3>
+              <p className="inet-section-sub">Ejecuta speedtest-cli en el servidor remoto</p>
             </div>
-          </div>
-        )}
-
-        {speedTesting && (
-          <div className="inet-speedtest-running">
-            <div className="inet-speedtest-pulse" />
-            <span>Ejecutando test de velocidad en el servidor...</span>
-            <span className="inet-speedtest-running-sub">Esto puede tardar 20-40 segundos</span>
-          </div>
-        )}
-
-        {speedResult && !speedTesting && (
-          <div className="inet-speedtest-results">
-            <div className="inet-speedtest-gauges">
-              <SpeedGauge
-                value={speedResult.download}
-                max={maxSpeed}
-                label="Download"
-                unit="Mbps"
-                color="#4FACFE"
-                secondaryColor="#00F2FE"
-              />
-              <SpeedGauge
-                value={speedResult.upload}
-                max={maxSpeed}
-                label="Upload"
-                unit="Mbps"
-                color="#00E676"
-                secondaryColor="#69F0AE"
-              />
-            </div>
-            <div className="inet-speedtest-details">
-              <div className="inet-speedtest-detail">
-                <span className="inet-speedtest-detail-label">Ping</span>
-                <span className="inet-speedtest-detail-value">{speedResult.ping} ms</span>
-              </div>
-              <div className="inet-speedtest-detail">
-                <span className="inet-speedtest-detail-label">Servidor</span>
-                <span className="inet-speedtest-detail-value">{speedResult.serverName}</span>
-              </div>
-              <div className="inet-speedtest-detail">
-                <span className="inet-speedtest-detail-label">Ubicación</span>
-                <span className="inet-speedtest-detail-value">{speedResult.serverLocation}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Speed History Toggle */}
-        {speedHistory.length > 0 && (
-          <>
-            <button className="inet-history-toggle" onClick={() => setShowHistory(v => !v)}>
-              <TrendingUp size={14} />
-              Historial de Tests ({speedHistory.length})
-              {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            <button
+              className={`inet-speedtest-btn ${speedTesting ? 'testing' : ''}`}
+              onClick={runSpeedTest}
+              disabled={speedTesting}
+            >
+              <RefreshCw size={15} className={speedTesting ? 'inet-spin' : ''} />
+              {speedTesting ? 'Midiendo...' : 'Medir Velocidad'}
             </button>
+          </div>
 
-            {showHistory && (
-              <div className="inet-speed-history">
-                {speedChartData.length > 1 && (
-                  <div className="inet-speed-history-chart">
-                    <ResponsiveContainer width="100%" height={140}>
-                      <BarChart data={speedChartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis dataKey="time" tick={{ fill: '#64748B', fontSize: 10 }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fill: '#64748B', fontSize: 10 }} tickLine={false} axisLine={false} unit=" Mbps" />
-                        <Tooltip
-                          contentStyle={{ background: 'rgba(16,21,36,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.78rem' }}
-                          labelStyle={{ color: '#94A3B8' }}
-                        />
-                        <Bar dataKey="Download" fill="#4FACFE" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="Upload" fill="#00E676" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-                <div className="inet-speed-history-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th><ArrowDown size={12} /> Download</th>
-                        <th><ArrowUp size={12} /> Upload</th>
-                        <th>Ping</th>
-                        <th>Servidor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {speedHistory.map(t => (
-                        <tr key={t.id}>
-                          <td className="inet-table-time">{formatDateTime(t.timestamp)}</td>
-                          <td style={{ color: '#4FACFE', fontWeight: 600 }}>{t.download_mbps?.toFixed(1)} Mbps</td>
-                          <td style={{ color: '#00E676', fontWeight: 600 }}>{t.upload_mbps?.toFixed(1)} Mbps</td>
-                          <td>{t.ping_ms?.toFixed(1)} ms</td>
-                          <td className="inet-table-server">{t.server_name}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {speedError && (
+            <div className="inet-speedtest-error">
+              <AlertTriangle size={16} />
+              <div>
+                {speedError.split('\n').map((line, i) => (
+                  <p key={i} style={i > 0 ? { fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' } : {}}>{line}</p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {speedTesting && (
+            <div className="inet-speedtest-running">
+              <div className="inet-speedtest-pulse" />
+              <span>Ejecutando test de velocidad en el servidor...</span>
+              <span className="inet-speedtest-running-sub">Esto puede tardar 20-40 segundos</span>
+            </div>
+          )}
+
+          {speedResult && !speedTesting && (
+            <div className="inet-speedtest-results">
+              <div className="inet-speedtest-gauges">
+                <SpeedGauge
+                  value={speedResult.download}
+                  max={maxSpeed}
+                  label="Download"
+                  unit="Mbps"
+                  color="#4FACFE"
+                  secondaryColor="#00F2FE"
+                />
+                <SpeedGauge
+                  value={speedResult.upload}
+                  max={maxSpeed}
+                  label="Upload"
+                  unit="Mbps"
+                  color="#00E676"
+                  secondaryColor="#69F0AE"
+                />
+              </div>
+              <div className="inet-speedtest-details">
+                <div className="inet-speedtest-detail">
+                  <span className="inet-speedtest-detail-label">Ping</span>
+                  <span className="inet-speedtest-detail-value">{speedResult.ping} ms</span>
+                </div>
+                <div className="inet-speedtest-detail">
+                  <span className="inet-speedtest-detail-label">Servidor</span>
+                  <span className="inet-speedtest-detail-value">{speedResult.serverName}</span>
+                </div>
+                <div className="inet-speedtest-detail">
+                  <span className="inet-speedtest-detail-label">Ubicación</span>
+                  <span className="inet-speedtest-detail-value">{speedResult.serverLocation}</span>
                 </div>
               </div>
-            )}
-          </>
-        )}
-      </div>
+            </div>
+          )}
+
+          {/* Speed History Toggle */}
+          {speedHistory.length > 0 && (
+            <>
+              <button className="inet-history-toggle" onClick={() => setShowHistory(v => !v)}>
+                <TrendingUp size={14} />
+                Historial de Tests ({speedHistory.length})
+                {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              {showHistory && (
+                <div className="inet-speed-history">
+                  {speedChartData.length > 1 && (
+                    <div className="inet-speed-history-chart">
+                      <ResponsiveContainer width="100%" height={140}>
+                        <BarChart data={speedChartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                          <XAxis dataKey="time" tick={{ fill: '#64748B', fontSize: 10 }} tickLine={false} axisLine={false} />
+                          <YAxis tick={{ fill: '#64748B', fontSize: 10 }} tickLine={false} axisLine={false} unit=" Mbps" />
+                          <Tooltip
+                            contentStyle={{ background: 'rgba(16,21,36,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: '0.78rem' }}
+                            labelStyle={{ color: '#94A3B8' }}
+                          />
+                          <Bar dataKey="Download" fill="#4FACFE" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Upload" fill="#00E676" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  <div className="inet-speed-history-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th><ArrowDown size={12} /> Download</th>
+                          <th><ArrowUp size={12} /> Upload</th>
+                          <th>Ping</th>
+                          <th>Servidor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {speedHistory.map(t => (
+                          <tr key={t.id}>
+                            <td className="inet-table-time">{formatDateTime(t.timestamp)}</td>
+                            <td style={{ color: '#4FACFE', fontWeight: 600 }}>{t.download_mbps?.toFixed(1)} Mbps</td>
+                            <td style={{ color: '#00E676', fontWeight: 600 }}>{t.upload_mbps?.toFixed(1)} Mbps</td>
+                            <td>{t.ping_ms?.toFixed(1)} ms</td>
+                            <td className="inet-table-server">{t.server_name}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

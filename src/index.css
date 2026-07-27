@@ -101,8 +101,90 @@ body {
   left: 0;
   top: 0;
   z-index: 100;
-  padding: 24px;
+  padding: 24px 16px;
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
 }
+
+/* Sidebar Toggle Button */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 20px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  z-index: 101;
+  padding: 0;
+}
+.sidebar-toggle-btn:hover {
+  background: rgba(0, 242, 254, 0.1);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Sidebar Collapsed State */
+.sidebar.collapsed {
+  width: 64px;
+  padding: 24px 12px;
+}
+.sidebar.collapsed .brand-name,
+.sidebar.collapsed .nav-link span,
+.sidebar.collapsed .upload-indicator-label,
+.sidebar.collapsed .upload-indicator-badge,
+.sidebar.collapsed .sidebar-footer-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sidebar.collapsed .brand-section {
+  justify-content: center;
+}
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  padding: 12px;
+}
+.sidebar.collapsed .upload-indicator-btn {
+  justify-content: center;
+  padding: 10px;
+}
+.sidebar.collapsed .sidebar-footer > div {
+  align-items: center;
+}
+
+/* Nav tooltip on collapsed sidebar */
+.sidebar.collapsed .nav-item {
+  position: relative;
+}
+.sidebar.collapsed .nav-item:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(16, 21, 36, 0.98);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
 
 .brand-section {
   display: flex;
@@ -206,6 +288,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  transition: margin-left 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.main-content.sidebar-collapsed {
+  margin-left: 64px;
+}
+
+/* Sidebar footer label */
+.sidebar-footer-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: opacity 200ms, width 200ms;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* Header */
@@ -292,10 +389,10 @@ body {
 
 /* Metric Cards */
 .metric-card {
-  padding: 24px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .metric-card-header {
@@ -326,7 +423,7 @@ body {
 
 .metric-card-value {
   font-family: var(--font-display);
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.5px;
 }
@@ -1299,7 +1396,7 @@ body {
 
 .fe-list-header {
   display: grid;
-  grid-template-columns: 1fr 90px 80px 150px;
+  grid-template-columns: 1fr 80px 70px 140px;
   padding: 6px 16px;
   border-bottom: 1px solid var(--border-color);
   background: rgba(0,0,0,0.2);
@@ -1319,7 +1416,7 @@ body {
 
 .fe-list-row {
   display: grid;
-  grid-template-columns: 1fr 90px 80px 150px;
+  grid-template-columns: 1fr 80px 70px 140px;
   padding: 5px 16px;
   align-items: center;
   cursor: pointer;
@@ -1327,6 +1424,7 @@ body {
   transition: background var(--transition-fast);
   border-bottom: 1px solid transparent;
   user-select: none;
+  min-width: 0;
 }
 .fe-list-row:hover { background: rgba(255,255,255,0.04); }
 .fe-list-row.selected {
@@ -1334,6 +1432,15 @@ body {
   border-bottom-color: rgba(0,242,254,0.05);
 }
 .fe-list-row.fe-cut { opacity: 0.45; }
+
+/* Hide permissions column on narrow layouts */
+@media (max-width: 900px) {
+  .fe-list-header,
+  .fe-list-row {
+    grid-template-columns: 1fr 80px 140px;
+  }
+  .fe-col-perms { display: none; }
+}
 
 .fe-col-name {
   display: flex;
@@ -2126,6 +2233,58 @@ section:has(.fe-root) {
   grid-template-columns: minmax(200px, 1.4fr) repeat(4, 1fr);
   gap: 14px;
 }
+
+/* ── Internal Tabs ─────────────────────────────────────────────────────────── */
+.inet-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: fit-content;
+}
+
+.inet-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+.inet-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.05);
+}
+.inet-tab-btn.active {
+  background: rgba(0,242,254,0.1);
+  color: var(--color-primary);
+  border: 1px solid rgba(0,242,254,0.25);
+}
+
+.inet-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 145, 0, 0.2);
+  color: #FF9100;
+  border-radius: 99px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+}
+
+
 
 .inet-status-card {
   padding: 20px;

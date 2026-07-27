@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -158,7 +158,18 @@ function App() {
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState(null); // 'updating', 'success', 'error'
   const [updateMessage, setUpdateMessage] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+  });
   const { uploads, activeCount } = useUploads();
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch {}
+      return next;
+    });
+  };
 
   const handleUpdateConfirm = async () => {
     setUpdateStatus('updating');
@@ -248,7 +259,12 @@ function App() {
   return (
     <div className="app-container">
       {/* Sidebar Navigation */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        {/* Toggle button */}
+        <button className="sidebar-toggle-btn" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}>
+          {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+
         <div className="brand-section">
           <div className="brand-icon">
             <ShieldCheck />
@@ -259,11 +275,12 @@ function App() {
         <nav style={{ flexGrow: 1 }}>
           <ul className="nav-menu">
             {menuItems.map(item => (
-              <li key={item.id} className="nav-item">
+              <li key={item.id} className="nav-item" data-tooltip={item.label}>
                 <button
                   className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
                   onClick={() => handleTabChange(item.id)}
                   style={{ background: 'none', width: '100%', border: 'none', textAlign: 'left' }}
+                  title={sidebarCollapsed ? item.label : ''}
                 >
                   {item.icon}
                   <span>{item.label}</span>
@@ -279,7 +296,7 @@ function App() {
             <button
               className={`upload-indicator-btn ${activeCount > 0 ? 'active' : 'done'}`}
               onClick={() => setUploadPanelOpen(p => !p)}
-              title="Ver subidas"
+              title={sidebarCollapsed ? (activeCount > 0 ? `${activeCount} subiendo` : 'Subidas') : 'Ver subidas'}
             >
               <span className={`upload-indicator-icon ${activeCount > 0 ? 'spinning' : ''}`}>
                 <Clock size={15} />
@@ -298,16 +315,14 @@ function App() {
 
         <div className="sidebar-footer">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Estado del Servidor
-            </span>
+            <span className="sidebar-footer-label">Estado del Servidor</span>
             <ConnectionStatus onConnectionChange={setIsConnected} />
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="main-content">
+      <main className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <header className="app-header">
           <div className="header-title">
             <h1>{title}</h1>
