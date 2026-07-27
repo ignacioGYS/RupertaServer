@@ -304,12 +304,18 @@ export default function Dashboard() {
                 <span className="sys-spec-label">Núcleos de CPU</span>
                 <span className="sys-spec-value">{sysInfo?.cpuCores ? `${sysInfo.cpuCores} Cores` : 'Cargando...'}</span>
               </div>
-              <div className="sys-spec-item" style={{ borderBottom: 'none' }}>
+              <div className="sys-spec-item" style={{ borderBottom: 'none', paddingBottom: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Clock size={12} style={{ color: 'var(--text-secondary)' }} />
                   <span className="sys-spec-label">Tiempo Activo</span>
                 </div>
                 <span className="sys-spec-value" style={{ color: 'var(--color-primary)' }}>{formatUptime(metrics.uptime)}</span>
+              </div>
+              <div className="sys-spec-item" style={{ borderBottom: 'none', paddingTop: '4px' }}>
+                <span className="sys-spec-label" style={{ paddingLeft: '18px', fontSize: '0.72rem', opacity: 0.8 }}>Último Reinicio</span>
+                <span className="sys-spec-value" style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {metrics.uptime ? new Date(Date.now() - metrics.uptime * 1000).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                </span>
               </div>
             </div>
           </div>
