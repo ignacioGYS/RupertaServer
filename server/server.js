@@ -74,8 +74,8 @@ app.get('/api/system-info', async (req, res) => {
 // 3. Real-time Metrics API
 app.get('/api/metrics', async (req, res) => {
   try {
-    // Single SSH roundtrip execution to gather all metrics
-    const command = `cat /proc/stat | head -n 1 && echo "===NET===" && cat /proc/net/dev && echo "===MEM===" && free -b && echo "===DF===" && df -x tmpfs -x devtmpfs -x overlay -x squashfs -x shm -P && echo "===UPTIME===" && cat /proc/uptime`;
+    // Single SSH roundtrip execution to gather all metrics + temperatures (CPU & disks)
+    const command = `cat /proc/stat | head -n 1 && echo "===NET===" && cat /proc/net/dev && echo "===MEM===" && free -b && echo "===DF===" && df -x tmpfs -x devtmpfs -x overlay -x squashfs -x shm -P && echo "===UPTIME===" && cat /proc/uptime && echo "===TEMP===" && cpu_temp="" && for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`;
     const output = await sshManager.exec(command);
     
     const parts = output.split(/===[A-Z]+===/);
@@ -150,20 +150,46 @@ app.get('/api/metrics', async (req, res) => {
       }
     }
 
+    // Parse Temperatures (parts[5] if present)
+    let cpuTemp = null;
+    const diskTemps = {};
+    if (parts[5]) {
+      const tempLines = parts[5].trim().split('\n');
+      for (const line of tempLines) {
+        if (line.startsWith('cpu:')) {
+          const val = parseFloat(line.split(':')[1]);
+          if (!isNaN(val)) cpuTemp = val;
+        } else if (line.startsWith('disk:')) {
+          const spl = line.split(':');
+          const dev = spl[1];
+          const val = parseFloat(spl[2]);
+          if (dev && !isNaN(val)) {
+            diskTemps[dev] = val;
+          }
+        }
+      }
+    }
+
     // Parse Disks (parts[3])
     const diskLines = parts[3].trim().split('\n');
     const disks = [];
     for (let i = 1; i < diskLines.length; i++) {
       const cols = diskLines[i].trim().split(/\s+/);
       if (cols.length >= 6) {
+        const device = cols[0];
         const mount = cols[5];
         const size = (parseInt(cols[1]) || 0) * 1024; // 1K-blocks to bytes
         const used = (parseInt(cols[2]) || 0) * 1024;
         const free = (parseInt(cols[3]) || 0) * 1024;
         const percent = parseInt(cols[4].replace('%', '')) || 0;
         
+        // Find disk temperature if block device is matched
+        const match = device.match(/^\/dev\/(sd[a-z]|nvme[0-9]+n[0-9]+)/);
+        const devName = match ? match[1] : null;
+        const temp = devName ? diskTemps[devName] : null;
+
         // Avoid adding system mount points unless relevant, but standard df -P handles it
-        disks.push({ mount, size, used, free, percent });
+        disks.push({ mount, device, size, used, free, percent, temp });
       }
     }
 
@@ -172,6 +198,7 @@ app.get('/api/metrics', async (req, res) => {
 
     res.json({
       cpu: Math.round(Math.max(0, Math.min(100, cpuPercent)) * 10) / 10,
+      cpuTemp,
       network: {
         rx: Math.round(netRxSpeed),
         tx: Math.round(netTxSpeed)
@@ -468,6 +495,8 @@ app.get('/api/hardware-info', async (req, res) => {
       `lsusb 2>/dev/null | head -30 || echo "NONE"`,
       `echo "===PCI_ALL==="`,
       `lspci 2>/dev/null || echo "NONE"`,
+      `echo "===TEMP==="`,
+      `cpu_temp="" ; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \\\${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`,
       `true`,
     ].join(' ; ');
 
@@ -608,15 +637,36 @@ app.get('/api/hardware-info', async (req, res) => {
       return { name: parts[0]?.replace(':', ''), state: parts[1] || 'UNKNOWN' };
     }).filter(i => i.name && i.name !== 'lo');
 
+    // --- Parse Temperatures ---
+    let cpuTemp = null;
+    const diskTemps = {};
+    if (sections['TEMP']) {
+      sections['TEMP'].forEach(line => {
+        if (line.startsWith('cpu:')) {
+          const val = parseFloat(line.split(':')[1]);
+          if (!isNaN(val)) cpuTemp = val;
+        } else if (line.startsWith('disk:')) {
+          const spl = line.split(':');
+          const dev = spl[1];
+          const val = parseFloat(spl[2]);
+          if (dev && !isNaN(val)) {
+            diskTemps[dev] = val;
+          }
+        }
+      });
+    }
+
     // --- Parse Storage ---
     const storageLines = (sections['STORAGE'] || []).filter(l => l !== 'NONE');
     const storage = storageLines.slice(1).map(line => { // skip header
       const parts = line.trim().split(/\s+/);
+      const name = parts[0];
       return {
-        name: parts[0], size: parts[1], type: parts[2],
+        name, size: parts[1], type: parts[2],
         model: parts.slice(3, parts.length - 2).join(' ') || 'Unknown',
         rotational: parts[parts.length - 2] === '1',
         transport: parts[parts.length - 1] !== '\\' ? parts[parts.length - 1] : null,
+        temp: diskTemps[name] || null
       };
     }).filter(d => d.name && d.type !== 'loop');
 
@@ -628,7 +678,7 @@ app.get('/api/hardware-info', async (req, res) => {
 
     res.json({
       gpu: { pci: gpuPci, nvidia: gpuNvidia },
-      cpu,
+      cpu: { ...cpu, temp: cpuTemp },
       ram: validDimms,
       memSummary,
       ramSource,
@@ -934,6 +984,40 @@ app.post('/api/system/power', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// 20b. System Update API (pull/rebuild/up in background)
+app.post('/api/system/update', async (req, res) => {
+  try {
+    const findOutput = await sshManager.exec('find ~ -maxdepth 4 -name "RupertaServer" -type d | head -n 1');
+    const remotePath = findOutput.trim();
+    if (!remotePath) {
+      return res.status(404).json({ error: 'No se encontró el directorio del proyecto en el servidor' });
+    }
+
+    console.log(`[System Update] Starting update in ${remotePath}`);
+
+    // Respond immediately to the frontend to avoid connection drop / HTTP abort errors on compose restart
+    res.json({ success: true, message: 'Actualización iniciada. El servidor reconstruirá los contenedores y se reiniciará en unos segundos.' });
+
+    // Detached background update execution
+    (async () => {
+      try {
+        console.log('[System Update] Pulling latest code...');
+        await sshManager.exec(`cd ${remotePath} && git pull origin main`);
+        console.log('[System Update] Rebuilding containers...');
+        await sshManager.exec(`cd ${remotePath} && docker compose build`);
+        console.log('[System Update] Restarting container...');
+        await sshManager.exec(`cd ${remotePath} && docker compose up -d`);
+        console.log('[System Update] Finished successfully!');
+      } catch (err) {
+        console.error('[System Update] Failed:', err.message);
+      }
+    })();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // 16. GPU Metrics API
 app.get('/api/gpu/metrics', async (req, res) => {
@@ -2416,8 +2500,19 @@ wss.on('connection', async (ws, request) => {
   });
 });
 
-// Initialize Database
-initializeDb();
+// Initialize Database and Load Temperature Module
+(async () => {
+  await initializeDb();
+  try {
+    if (config.ssh.password) {
+      // Load drivetemp kernel module on host to expose SATA disk temperatures
+      await sshManager.exec(`echo "${config.ssh.password}" | sudo -S modprobe drivetemp 2>/dev/null || true`);
+      console.log('[Server] Loaded drivetemp module on remote host');
+    }
+  } catch (err) {
+    console.warn('[Server] Could not load drivetemp module on host:', err.message);
+  }
+})();
 
 // Background metrics collection every 5 minutes
 setInterval(async () => {

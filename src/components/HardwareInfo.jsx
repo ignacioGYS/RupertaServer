@@ -148,6 +148,7 @@ function CpuSection({ cpu }) {
       <div className="sys-specs-list">
         <SpecRow label="Modelo" value={cpu.model} />
         <SpecRow label="Arquitectura" value={cpu.architecture} />
+        <SpecRow label="Temperatura" value={cpu.temp ? `${cpu.temp} °C` : null} accent={cpu.temp > 75 ? 'var(--color-danger)' : cpu.temp > 55 ? 'var(--color-warning)' : 'var(--color-success)'} />
         <SpecRow label="Zócalos" value={`${cpu.sockets} socket${cpu.sockets > 1 ? 's' : ''}`} />
         <SpecRow label="Núcleos físicos" value={`${totalCores} (${cpu.coresPerSocket} por socket)`} />
         <SpecRow label="Hilos totales" value={`${cpu.totalThreads}`} mono />
@@ -314,6 +315,11 @@ function StorageSection({ storage }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                   <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>/dev/{d.name}</span>
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, color: diskColor(d), background: `${diskColor(d)}22`, border: `1px solid ${diskColor(d)}44`, borderRadius: '4px', padding: '1px 7px' }}>{diskLabel(d)}</span>
+                  {d.temp !== undefined && d.temp !== null && (
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: d.temp > 50 ? 'var(--color-danger)' : d.temp > 40 ? 'var(--color-warning)' : 'var(--color-success)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', padding: '1px 7px', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Temperatura del disco">
+                      🌡️ {d.temp}°C
+                    </span>
+                  )}
                 </div>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
                   {d.model && d.model !== 'Unknown' && <span>{d.model} · </span>}

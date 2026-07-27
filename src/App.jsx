@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -71,12 +71,133 @@ function UploadStatusPanel({ onClose }) {
   );
 }
 
+function UpdateModal({ onClose, onConfirm, status, message }) {
+  return (
+    <div className="upload-panel-overlay" style={{ zIndex: 10000, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }} onClick={status !== 'updating' ? onClose : undefined}>
+      <div className="upload-panel-popup" style={{ maxWidth: '420px', width: '90%', border: '1px solid rgba(0, 242, 254, 0.2)' }} onClick={e => e.stopPropagation()}>
+        <div className="upload-panel-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="upload-panel-title" style={{ color: 'var(--color-primary)' }}>
+            <RefreshCw size={15} className={status === 'updating' ? 'upload-spin-icon' : ''} />
+            <span>Actualizar RupertaServer</span>
+          </div>
+          {status !== 'updating' && (
+            <button className="upload-panel-close" onClick={onClose}><X size={14} /></button>
+          )}
+        </div>
+
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {status === null && (
+            <>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                ¿Confirmas que deseas actualizar el servidor? Esto descargará el último código desde la rama principal (git pull) y reconstruirá y reiniciará los contenedores de Docker.
+              </p>
+              <div style={{ background: 'rgba(255, 145, 0, 0.08)', border: '1px solid rgba(255, 145, 0, 0.2)', borderRadius: '8px', padding: '12px', display: 'flex', gap: '10px' }}>
+                <Clock size={16} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: '2px' }} />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  La conexión con el monitor web se perderá por unos 10-30 segundos mientras los servicios se reinician.
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)' }}>
+                  Cancelar
+                </button>
+                <button onClick={onConfirm} style={{ flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', background: 'linear-gradient(135deg, #00F2FE 0%, #4FACFE 100%)', border: 'none', color: '#080B11', fontWeight: 700 }}>
+                  Confirmar
+                </button>
+              </div>
+            </>
+          )}
+
+          {status === 'updating' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0', gap: '16px' }}>
+              <div className="spinner" style={{ width: '36px', height: '36px' }} />
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: 600, display: 'block' }}>Reconstruyendo contenedores...</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>El monitor se desconectará pronto y se reconectará de forma automática.</span>
+              </div>
+            </div>
+          )}
+
+          {status === 'success' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: '12px' }}>
+              <Check size={36} style={{ color: 'var(--color-success)' }} />
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                {message || 'Actualización completada.'}
+              </p>
+              <button onClick={onClose} style={{ width: '100%', padding: '10px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', marginTop: '10px' }}>
+                Cerrar
+              </button>
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 0', gap: '12px' }}>
+              <X size={36} style={{ color: 'var(--color-danger)' }} />
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-danger)', textAlign: 'center', fontWeight: 600 }}>
+                Error al actualizar
+              </p>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', textAlign: 'center', maxHeight: '100px', overflowY: 'auto' }}>
+                {message || 'Error desconocido'}
+              </p>
+              <button onClick={onClose} style={{ width: '100%', padding: '10px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', marginTop: '10px' }}>
+                Cerrar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isConnected, setIsConnected] = useState(false);
   const [mountedTabs, setMountedTabs] = useState(new Set(['dashboard']));
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState(null); // 'updating', 'success', 'error'
+  const [updateMessage, setUpdateMessage] = useState('');
   const { uploads, activeCount } = useUploads();
+
+  const handleUpdateConfirm = async () => {
+    setUpdateStatus('updating');
+    try {
+      const res = await fetch('/api/system/update', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setUpdateStatus('error');
+        setUpdateMessage(data.error || 'Error al iniciar actualización');
+      } else {
+        // Poll connection status until server is back online
+        let attempts = 0;
+        const checkOnline = setInterval(async () => {
+          attempts++;
+          try {
+            const check = await fetch('/api/connection-status');
+            if (check.ok) {
+              clearInterval(checkOnline);
+              setUpdateStatus('success');
+              setUpdateMessage('Servidor actualizado con éxito. Recargando aplicación...');
+              setTimeout(() => {
+                window.location.reload();
+              }, 2000);
+            }
+          } catch (_) {
+            // normal if down
+          }
+          if (attempts > 60) {
+            clearInterval(checkOnline);
+            setUpdateStatus('error');
+            setUpdateMessage('El servidor tardó demasiado en responder.');
+          }
+        }, 2000);
+      }
+    } catch (e) {
+      setUpdateStatus('error');
+      setUpdateMessage(e.message);
+    }
+  };
 
   const handleTabChange = (id) => {
     setActiveTab(id);
@@ -208,6 +329,35 @@ function App() {
                   : `${uploads.length} listo${uploads.length !== 1 ? 's' : ''}`}
               </button>
             )}
+            {/* Update server button */}
+            <button
+              onClick={() => {
+                setUpdateStatus(null);
+                setUpdateMessage('');
+                setUpdateModalOpen(true);
+              }}
+              className="header-update-btn"
+              title="Actualizar servidor"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(0, 242, 254, 0.06)',
+                border: '1px solid rgba(0, 242, 254, 0.25)',
+                color: 'var(--color-primary)',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginRight: '8px'
+              }}
+            >
+              <RefreshCw size={12} />
+              <span>Actualizar Monitor</span>
+            </button>
+
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
               v1.0.0
             </span>
@@ -226,6 +376,16 @@ function App() {
 
       {/* Global Upload Status Panel */}
       {uploadPanelOpen && <UploadStatusPanel onClose={() => setUploadPanelOpen(false)} />}
+
+      {/* Global Update Modal */}
+      {updateModalOpen && (
+        <UpdateModal
+          onClose={() => setUpdateModalOpen(false)}
+          onConfirm={handleUpdateConfirm}
+          status={updateStatus}
+          message={updateMessage}
+        />
+      )}
     </div>
   );
 }

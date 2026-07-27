@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Cpu, HardDrive, Network, Layers, Clock, ShieldCheck, Activity } from 'lucide-react';
+import { Cpu, HardDrive, Network, Layers, Clock, ShieldCheck, Activity, Thermometer } from 'lucide-react';
 import { formatBytes, formatNetworkSpeed, formatUptime, formatPercent } from '../utils/formatters';
 
 export default function Dashboard() {
@@ -112,7 +112,15 @@ export default function Dashboard() {
             <span className="metric-card-title">Procesador (CPU)</span>
             <div className="metric-card-icon" style={{ color: '#00F2FE' }}><Cpu size={20} /></div>
           </div>
-          <div className="metric-card-value">{formatPercent(metrics.cpu)}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div className="metric-card-value">{formatPercent(metrics.cpu)}</div>
+            {metrics.cpuTemp !== undefined && metrics.cpuTemp !== null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: metrics.cpuTemp > 75 ? 'var(--color-danger)' : metrics.cpuTemp > 55 ? 'var(--color-warning)' : 'var(--color-success)' }} title="Temperatura de CPU">
+                <Thermometer size={14} />
+                <span>{metrics.cpuTemp}°C</span>
+              </div>
+            )}
+          </div>
           <div className="progress-bar-container">
             <div 
               className={`progress-bar ${metrics.cpu > 80 ? 'danger' : metrics.cpu > 50 ? 'warning' : ''}`}
@@ -245,7 +253,15 @@ export default function Dashboard() {
                 metrics.disks.map((disk, idx) => (
                   <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                      <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{disk.mount}</span>
+                      <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {disk.mount}
+                        {disk.temp !== undefined && disk.temp !== null && (
+                          <span style={{ fontSize: '0.72rem', color: disk.temp > 50 ? 'var(--color-danger)' : disk.temp > 40 ? 'var(--color-warning)' : 'var(--color-success)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '2px' }} title="Temperatura del disco">
+                            <Thermometer size={11} />
+                            {disk.temp}°C
+                          </span>
+                        )}
+                      </span>
                       <span style={{ color: 'var(--text-secondary)' }}>
                         {formatBytes(disk.used)} / {formatBytes(disk.size)} ({disk.percent}%)
                       </span>
