@@ -87,6 +87,27 @@ class SSHClientManager {
     });
   }
 
+  // Like exec() but streams stdout/stderr chunks in real-time via onData callback
+  async execStream(command, onData) {
+    const conn = await this.getConnection();
+    return new Promise((resolve, reject) => {
+      conn.exec(command, (err, stream) => {
+        if (err) return reject(err);
+        let exitCode = 0;
+        stream.on('close', (code) => {
+          exitCode = code ?? 0;
+          resolve(exitCode);
+        });
+        stream.on('data', (data) => {
+          onData(data.toString());
+        });
+        stream.stderr.on('data', (data) => {
+          onData(data.toString()); // show stderr too (apt uses it for progress)
+        });
+      });
+    });
+  }
+
   // Returns a single persistent SFTP session, creating one only if needed
   async getSftp() {
     // If we already have a live session, return it immediately

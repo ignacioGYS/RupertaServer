@@ -103,6 +103,7 @@ export default function Terminal() {
   const [status, setStatus]           = useState('connecting');
   const [modal, setModal]             = useState(null);
   const [powerStatus, setPowerStatus] = useState(null);
+  const [aptRunning, setAptRunning]   = useState(null); // 'update'|'upgrade'|'maintenance'|null
 
   useEffect(() => {
     let isDisposed = false;
@@ -224,15 +225,51 @@ export default function Terminal() {
     setTimeout(() => setPowerStatus(null), 5000);
   };
 
-  // Injects a command into the active xterm WebSocket (as if the user typed it)
-  const sendCommand = (cmd) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      alert('La terminal no está conectada. Abrí la terminal primero.');
-      return;
+  // Runs an apt action via the server SSE endpoint and streams output to xterm
+  const runAptAction = async (action) => {
+    if (aptRunning) return; // prevent double-click
+    const term = xtermRef.current;
+    if (!term) return;
+
+    setAptRunning(action);
+
+    const labels = {
+      update:      '\x1b[36;1m[apt update]\x1b[0m',
+      upgrade:     '\x1b[32;1m[apt upgrade]\x1b[0m',
+      maintenance: '\x1b[35;1m[mantenimiento]\x1b[0m',
+    };
+    term.write(`\r\n${labels[action]} Iniciando...\r\n`);
+
+    try {
+      const resp = await fetch(`/api/system/apt?action=${action}`);
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === 'DONE') {
+            term.write(`\r\n${labels[action]} \x1b[32mFinalizado\x1b[0m\r\n`);
+            break;
+          }
+          try {
+            const text = atob(payload);
+            term.write(text);
+          } catch (_) {}
+        }
+      }
+    } catch (err) {
+      term.write(`\r\n\x1b[31mError: ${err.message}\x1b[0m\r\n`);
     }
-    // Write the command text + Enter
-    ws.send(JSON.stringify({ type: 'data', data: cmd + '\r' }));
+
+    setAptRunning(null);
   };
 
   return (
@@ -269,50 +306,65 @@ export default function Terminal() {
             {/* ── Quick apt Actions ─────────────────────────────── */}
             <button
               id="apt-update-btn"
-              onClick={() => sendCommand('sudo apt update && echo "" && apt list --upgradable 2>/dev/null')}
+              onClick={() => runAptAction('update')}
+              disabled={!!aptRunning}
               title="Buscar actualizaciones disponibles (apt update)"
               style={{
                 display: 'flex', alignItems: 'center', gap: '7px',
-                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
-                background: 'rgba(0,242,254,0.08)', border: '1px solid rgba(0,242,254,0.25)',
+                padding: '8px 14px', borderRadius: '8px', cursor: aptRunning ? 'not-allowed' : 'pointer',
+                background: aptRunning === 'update' ? 'rgba(0,242,254,0.22)' : 'rgba(0,242,254,0.08)',
+                border: '1px solid rgba(0,242,254,0.25)',
                 color: '#00F2FE', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+                opacity: aptRunning && aptRunning !== 'update' ? 0.45 : 1,
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,242,254,0.18)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,242,254,0.08)'}
+              onMouseEnter={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(0,242,254,0.18)'; }}
+              onMouseLeave={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(0,242,254,0.08)'; }}
             >
-              <PackageSearch size={14} /> Update
+              {aptRunning === 'update'
+                ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Buscando...</>
+                : <><PackageSearch size={14} /> Update</>}
             </button>
 
             <button
               id="apt-upgrade-btn"
-              onClick={() => sendCommand('sudo apt upgrade -y')}
+              onClick={() => runAptAction('upgrade')}
+              disabled={!!aptRunning}
               title="Instalar todas las actualizaciones disponibles (apt upgrade)"
               style={{
                 display: 'flex', alignItems: 'center', gap: '7px',
-                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
-                background: 'rgba(0,230,118,0.08)', border: '1px solid rgba(0,230,118,0.25)',
+                padding: '8px 14px', borderRadius: '8px', cursor: aptRunning ? 'not-allowed' : 'pointer',
+                background: aptRunning === 'upgrade' ? 'rgba(0,230,118,0.22)' : 'rgba(0,230,118,0.08)',
+                border: '1px solid rgba(0,230,118,0.25)',
                 color: '#00E676', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+                opacity: aptRunning && aptRunning !== 'upgrade' ? 0.45 : 1,
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,230,118,0.2)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,230,118,0.08)'}
+              onMouseEnter={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(0,230,118,0.2)'; }}
+              onMouseLeave={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(0,230,118,0.08)'; }}
             >
-              <PackageCheck size={14} /> Upgrade
+              {aptRunning === 'upgrade'
+                ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Instalando...</>
+                : <><PackageCheck size={14} /> Upgrade</>}
             </button>
 
             <button
               id="apt-maintenance-btn"
-              onClick={() => sendCommand('sudo apt autoremove -y && sudo apt autoclean && sudo journalctl --vacuum-time=7d && echo "✔ Mantenimiento completado"')}
+              onClick={() => runAptAction('maintenance')}
+              disabled={!!aptRunning}
               title="Limpieza: autoremove + autoclean + vaciar logs antiguos"
               style={{
                 display: 'flex', alignItems: 'center', gap: '7px',
-                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
-                background: 'rgba(224,64,251,0.08)', border: '1px solid rgba(224,64,251,0.25)',
+                padding: '8px 14px', borderRadius: '8px', cursor: aptRunning ? 'not-allowed' : 'pointer',
+                background: aptRunning === 'maintenance' ? 'rgba(224,64,251,0.22)' : 'rgba(224,64,251,0.08)',
+                border: '1px solid rgba(224,64,251,0.25)',
                 color: '#E040FB', fontWeight: 600, fontSize: '0.82rem', transition: 'background 0.2s',
+                opacity: aptRunning && aptRunning !== 'maintenance' ? 0.45 : 1,
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(224,64,251,0.2)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(224,64,251,0.08)'}
+              onMouseEnter={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(224,64,251,0.2)'; }}
+              onMouseLeave={e => { if (!aptRunning) e.currentTarget.style.background = 'rgba(224,64,251,0.08)'; }}
             >
-              <Trash2 size={14} /> Mantenimiento
+              {aptRunning === 'maintenance'
+                ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Limpiando...</>
+                : <><Trash2 size={14} /> Mantenimiento</>}
             </button>
 
             <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />

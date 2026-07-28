@@ -985,6 +985,55 @@ app.post('/api/system/power', async (req, res) => {
   }
 });
 
+// ── Apt Quick Actions (SSE streaming) ────────────────────────────
+// GET /api/system/apt?action=update|upgrade|maintenance
+// Streams output via Server-Sent Events so the terminal can display it live
+app.get('/api/system/apt', async (req, res) => {
+  const { action } = req.query;
+  const allowed = ['update', 'upgrade', 'maintenance'];
+  if (!allowed.includes(action)) {
+    return res.status(400).json({ error: 'Invalid action' });
+  }
+
+  const sudo = config.ssh.password
+    ? `echo "${config.ssh.password}" | sudo -S`
+    : 'sudo';
+
+  const commands = {
+    update:      `DEBIAN_FRONTEND=noninteractive ${sudo} apt-get update -q 2>&1 && echo "" && apt list --upgradable 2>/dev/null`,
+    upgrade:     `DEBIAN_FRONTEND=noninteractive ${sudo} apt-get upgrade -y 2>&1`,
+    maintenance: `DEBIAN_FRONTEND=noninteractive ${sudo} apt-get autoremove -y 2>&1 && ${sudo} apt-get autoclean 2>&1 && ${sudo} journalctl --vacuum-time=7d 2>&1 && echo "✔ Mantenimiento completado"`,
+  };
+
+  const cmd = commands[action];
+
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (chunk) => {
+    // Convert \n to \r\n for xterm compatibility and escape for SSE
+    const escaped = chunk.replace(/\n/g, '\r\n');
+    res.write(`data: ${Buffer.from(escaped).toString('base64')}\n\n`);
+  };
+
+  try {
+    console.log(`[Apt] Running action: ${action}`);
+    await sshManager.execStream(cmd, send);
+    res.write(`data: DONE\n\n`);
+  } catch (err) {
+    console.error(`[Apt] Error during ${action}:`, err.message);
+    send(`\r\n\x1b[31mError: ${err.message}\x1b[0m\r\n`);
+    res.write(`data: DONE\n\n`);
+  }
+
+  res.end();
+});
+
+
+
 // 20b. System Update API (pull/rebuild/up in background)
 app.post('/api/system/update', async (req, res) => {
   try {
