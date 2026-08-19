@@ -3,7 +3,7 @@ import {
   Play, Square, RefreshCw, Activity, Layers, Terminal,
   Search, Info, HardDrive, Network, Cpu,
   X, ChevronDown, ChevronUp, Clock, Hash, GitBranch,
-  AlertCircle, CheckCircle, XCircle, Scroll
+  AlertCircle, CheckCircle, XCircle, Scroll, ExternalLink
 } from 'lucide-react';
 
 /* ─── ANSI colour parser ─────────────────────────────────────────────────── */
@@ -587,6 +587,24 @@ export default function DockerManager() {
                   const blockIo = cs.blockIo || '-';
                   const isExpanded = expandedRow === c.id;
 
+                  // Parse mapped host ports
+                  const getMappedPorts = (portsStr) => {
+                    if (!portsStr || portsStr === '-') return [];
+                    const parts = portsStr.split(',');
+                    const hostPorts = [];
+                    for (const part of parts) {
+                      const match = part.match(/:([0-9]+)->/);
+                      if (match) {
+                        const port = parseInt(match[1], 10);
+                        if (port && !hostPorts.includes(port)) {
+                          hostPorts.push(port);
+                        }
+                      }
+                    }
+                    return hostPorts.sort((a, b) => a - b);
+                  };
+                  const mappedPorts = getMappedPorts(c.ports);
+
                   return (
                     <React.Fragment key={c.id}>
                       <tr
@@ -661,9 +679,52 @@ export default function DockerManager() {
                           {c.ports && c.ports !== '-' && (
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.ports}>{c.ports}</div>
                           )}
+                          {c.isRunning && mappedPorts.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                              {mappedPorts.map(port => (
+                                <a
+                                  key={port}
+                                  href={`http://${window.location.hostname}:${port}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="badge"
+                                  style={{
+                                    textDecoration: 'none',
+                                    fontSize: '0.68rem',
+                                    padding: '2px 5px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 2,
+                                    background: 'rgba(0, 242, 254, 0.12)',
+                                    color: '#00F2FE',
+                                    border: '1px solid rgba(0, 242, 254, 0.25)',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <ExternalLink size={9} />
+                                  :{port}
+                                </a>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            {c.isRunning && mappedPorts.length > 0 && (
+                              <a
+                                href={`http://${window.location.hostname}:${mappedPorts[0]}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn btn-secondary btn-icon"
+                                title={`Abrir en navegador (puerto :${mappedPorts[0]})`}
+                                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#00F2FE' }}
+                              >
+                                <ExternalLink size={13} />
+                              </a>
+                            )}
                             <button className="btn btn-secondary btn-icon" onClick={() => setLogsTarget(c.name)} title="Ver Logs">
                               <Terminal size={13} />
                             </button>
@@ -721,6 +782,23 @@ export default function DockerManager() {
                                 <div>
                                   <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>Puertos:</span>
                                   <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>{c.ports}</span>
+                                  {c.isRunning && mappedPorts.length > 0 && (
+                                    <span style={{ marginLeft: 8 }}>
+                                      (Abrir:{' '}
+                                      {mappedPorts.map((port, idx) => (
+                                        <a
+                                          key={port}
+                                          href={`http://${window.location.hostname}:${port}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          style={{ color: '#00F2FE', textDecoration: 'underline', marginLeft: idx > 0 ? 8 : 4 }}
+                                        >
+                                          :{port}
+                                        </a>
+                                      ))}
+                                      )
+                                    </span>
+                                  )}
                                 </div>
                               )}
                               <div>
