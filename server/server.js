@@ -21,6 +21,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ── Security Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Wraps a string in single quotes and escapes any embedded single quotes.
+ * This is the safest way to pass user-supplied strings to a POSIX shell.
+ * Example: shellQuote("foo 'bar'") → "'foo '\''bar''"
+ */
+function shellQuote(str) {
+  if (typeof str !== 'string') str = String(str);
+  return "'" + str.replace(/'/g, "'\\'' ") + "'";
+}
+
+/** Returns true if the string is a valid IPv4 address (strict). */
+function isValidIpv4(ip) {
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
+    ip.split('.').every(n => parseInt(n, 10) <= 255);
+}
+
+/** Returns true if the string is a safe Docker container / image name. */
+function isValidContainerName(name) {
+  // Docker names: alphanumeric, underscores, dashes, dots. No shell metacharacters.
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
+}
+
 // In-memory cache for delta calculations (CPU and Network)
 const lastMetricsCache = {
   cpu: null,
@@ -242,12 +266,13 @@ app.get('/api/processes', async (req, res) => {
 // 5. Kill Process API
 app.post('/api/processes/kill', async (req, res) => {
   const { pid } = req.body;
-  if (!pid) {
-    return res.status(400).json({ error: 'PID is required' });
+  const pidInt = parseInt(pid, 10);
+  if (!pid || isNaN(pidInt) || pidInt <= 0 || pidInt > 4194304) {
+    return res.status(400).json({ error: 'PID inválido' });
   }
   try {
-    await sshManager.exec(`kill -9 ${pid}`);
-    res.json({ success: true, message: `Process ${pid} terminated` });
+    await sshManager.exec(`kill -9 ${pidInt}`);
+    res.json({ success: true, message: `Process ${pidInt} terminated` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -328,14 +353,16 @@ app.post('/api/docker/action', async (req, res) => {
   if (!name || !action) {
     return res.status(400).json({ error: 'Name and action are required' });
   }
-  
+  if (!isValidContainerName(name)) {
+    return res.status(400).json({ error: 'Nombre de contenedor inválido' });
+  }
   const allowedActions = ['start', 'stop', 'restart'];
   if (!allowedActions.includes(action)) {
     return res.status(400).json({ error: 'Invalid action' });
   }
 
   try {
-    await sshManager.exec(`docker ${action} ${name}`);
+    await sshManager.exec(`docker ${action} ${shellQuote(name)}`);
     res.json({ success: true, message: `Container ${name} ${action}ed` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -344,15 +371,18 @@ app.post('/api/docker/action', async (req, res) => {
 
 // 9. Docker Container Logs API
 app.get('/api/docker/logs', async (req, res) => {
-  const { name, lines = 200 } = req.query;
+  const { name } = req.query;
   if (!name) {
     return res.status(400).json({ error: 'Container name is required' });
   }
+  if (!isValidContainerName(name)) {
+    return res.status(400).json({ error: 'Nombre de contenedor inválido' });
+  }
+  const linesInt = Math.min(Math.max(parseInt(req.query.lines, 10) || 200, 1), 10000);
 
   try {
-    // We run logs with timestamps for better debugging context
     const timestamps = req.query.timestamps === 'true';
-    const cmd = `docker logs --tail ${lines}${timestamps ? ' --timestamps' : ''} ${name} 2>&1`;
+    const cmd = `docker logs --tail ${linesInt}${timestamps ? ' --timestamps' : ''} ${shellQuote(name)} 2>&1`;
     const logs = await sshManager.exec(cmd);
     res.json({ logs });
   } catch (err) {
@@ -366,9 +396,12 @@ app.get('/api/docker/inspect', async (req, res) => {
   if (!name) {
     return res.status(400).json({ error: 'Container name is required' });
   }
+  if (!isValidContainerName(name)) {
+    return res.status(400).json({ error: 'Nombre de contenedor inválido' });
+  }
   try {
     const output = await sshManager.exec(
-      `docker inspect ${name} --format '{{json .}}'`
+      `docker inspect ${shellQuote(name)} --format '{{json .}}'`
     );
     const data = JSON.parse(output.trim());
     const info = {
@@ -496,7 +529,9 @@ app.get('/api/hardware-info', async (req, res) => {
       `echo "===PCI_ALL==="`,
       `lspci 2>/dev/null || echo "NONE"`,
       `echo "===TEMP==="`,
-      `cpu_temp="" ; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \\\${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`,
+      `cpu_temp="" ; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`,
+      `echo "===SMART==="`,
+      `for dev in $(lsblk -d -o NAME,TYPE 2>/dev/null | awk 'NR>1 && $2!="loop"{print $1}'); do echo "SMARTDEV:$dev"; sudo -n smartctl -H -A -i /dev/$dev 2>/dev/null || echo "SMART_NA"; echo "SMARTEND"; done`,
       `true`,
     ].join(' ; ');
 
@@ -656,6 +691,81 @@ app.get('/api/hardware-info', async (req, res) => {
       });
     }
 
+    // --- Parse SMART data per disk ---
+    const smartData = {};
+    const smartRaw = (sections['SMART'] || []);
+    let currentSmartDev = null;
+    let currentSmartLines = [];
+    for (const line of smartRaw) {
+      if (line.startsWith('SMARTDEV:')) {
+        currentSmartDev = line.split(':')[1]?.trim();
+        currentSmartLines = [];
+      } else if (line === 'SMARTEND') {
+        if (currentSmartDev) {
+          const isNA = currentSmartLines.some(l => l === 'SMART_NA');
+          if (!isNA) {
+            const smart = {};
+            // Health overall assessment
+            const healthLine = currentSmartLines.find(l => /overall-health|self-assessment/i.test(l));
+            if (healthLine) {
+              smart.health = /PASSED/i.test(healthLine) ? 'PASSED' : /FAILED/i.test(healthLine) ? 'FAILED' : 'UNKNOWN';
+            }
+            // NVMe health
+            const nvmeHealthLine = currentSmartLines.find(l => /critical warning/i.test(l));
+            if (nvmeHealthLine) {
+              const val = nvmeHealthLine.split(':')[1]?.trim();
+              smart.health = val === '0x00' || val === '0' ? 'PASSED' : 'WARNING';
+            }
+            // Parse SMART attributes (ATA) and NVMe key-value lines
+            currentSmartLines.forEach(l => {
+              const cols = l.trim().split(/\s+/);
+              // ATA attributes: ID# ATTRIBUTE_NAME FLAG VALUE WORST THRESH TYPE UPDATED WHEN_FAILED RAW_VALUE
+              const attrId = parseInt(cols[0]);
+              if (!isNaN(attrId)) {
+                const attrName = cols[1]?.toLowerCase();
+                const raw = cols[cols.length - 1];
+                if (attrName?.includes('power_on_hours') || attrName?.includes('power-on_hours')) {
+                  smart.powerOnHours = parseInt(raw) || null;
+                } else if (attrName?.includes('power_cycle_count') || attrName?.includes('start_stop_count')) {
+                  smart.powerCycles = parseInt(raw) || null;
+                } else if (attrName?.includes('reallocated_sector') || attrName?.includes('reallocated_event')) {
+                  smart.reallocatedSectors = parseInt(raw) || null;
+                } else if (attrName?.includes('wear_leveling_count') || attrName?.includes('media_wearout_indicator') || attrName?.includes('percent_lifetime')) {
+                  smart.wearLevel = parseInt(cols[3]) || null; // VALUE field (0-100)
+                } else if (attrName?.includes('pending_sector') || attrName?.includes('current_pending_sector')) {
+                  smart.pendingSectors = parseInt(raw) || null;
+                }
+              }
+              // NVMe / generic key: value lines
+              if (l.includes(':')) {
+                const [k, v] = l.split(':').map(s => s.trim());
+                const kl = k.toLowerCase();
+                if (kl.includes('power on hours') || kl.includes('power-on hours')) {
+                  smart.powerOnHours = parseInt(v.replace(/[^\d]/g, '')) || null;
+                } else if (kl.includes('power cycle') || kl.includes('power cycles')) {
+                  smart.powerCycles = parseInt(v.replace(/[^\d]/g, '')) || null;
+                } else if (kl.includes('percentage used')) {
+                  smart.percentageUsed = parseInt(v) || 0;
+                } else if (kl.includes('available spare') && !kl.includes('threshold')) {
+                  smart.availableSpare = parseInt(v) || null;
+                } else if (kl.includes('data units written')) {
+                  const tb = parseFloat(v.replace(/[^\d.]/g, ''));
+                  if (!isNaN(tb)) smart.tbWritten = tb;
+                }
+              }
+            });
+            smartData[currentSmartDev] = smart;
+          } else {
+            smartData[currentSmartDev] = null; // not available
+          }
+        }
+        currentSmartDev = null;
+        currentSmartLines = [];
+      } else if (currentSmartDev) {
+        currentSmartLines.push(line);
+      }
+    }
+
     // --- Parse Storage ---
     const storageLines = (sections['STORAGE'] || []).filter(l => l !== 'NONE');
     const storage = storageLines.slice(1).map(line => { // skip header
@@ -666,7 +776,8 @@ app.get('/api/hardware-info', async (req, res) => {
         model: parts.slice(3, parts.length - 2).join(' ') || 'Unknown',
         rotational: parts[parts.length - 2] === '1',
         transport: parts[parts.length - 1] !== '\\' ? parts[parts.length - 1] : null,
-        temp: diskTemps[name] || null
+        temp: diskTemps[name] || null,
+        smart: smartData.hasOwnProperty(name) ? smartData[name] : undefined
       };
     }).filter(d => d.name && d.type !== 'loop');
 
@@ -697,8 +808,8 @@ app.get('/api/hardware-info', async (req, res) => {
 app.get('/api/sftp/list', async (req, res) => {
   const { path = '.' } = req.query;
   try {
-    // Get real absolute path first
-    const absolutePath = await sshManager.exec(`cd "${path.replace(/"/g, '\\"')}" && pwd`);
+    // Get real absolute path first (use shellQuote for safe single-quote wrapping)
+    const absolutePath = await sshManager.exec(`cd ${shellQuote(path)} && pwd`);
     const files = await sshManager.sftpList(absolutePath);
     
     // Sort directories first, then files alphabetically
@@ -833,7 +944,7 @@ app.post('/api/sftp/upload-single', (req, res) => {
     filePromise = (async () => {
       // Create parent directories recursively
       const parentDir = path.dirname(destFullPath);
-      await sshManager.exec(`mkdir -p "${parentDir.replace(/"/g, '\\"')}"`);
+      await sshManager.exec(`mkdir -p ${shellQuote(parentDir)}`);
 
       // Stream file directly to SFTP
       const sftp = await sshManager.getSftp();
@@ -940,7 +1051,7 @@ app.post('/api/sftp/copy', async (req, res) => {
     return res.status(400).json({ error: 'sourcePath and destPath are required' });
   }
   try {
-    await sshManager.exec(`cp -r "${sourcePath}" "${destPath}"`);
+    await sshManager.exec(`cp -r ${shellQuote(sourcePath)} ${shellQuote(destPath)}`);
     res.json({ success: true, message: 'Copied successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -954,7 +1065,7 @@ app.post('/api/sftp/move', async (req, res) => {
     return res.status(400).json({ error: 'sourcePath and destPath are required' });
   }
   try {
-    await sshManager.exec(`mv "${sourcePath}" "${destPath}"`);
+    await sshManager.exec(`mv ${shellQuote(sourcePath)} ${shellQuote(destPath)}`);
     res.json({ success: true, message: 'Moved successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1827,6 +1938,7 @@ app.post('/api/wiz/color', async (req, res) => {
 app.get('/api/network/identify', async (req, res) => {
   const { ip } = req.query;
   if (!ip) return res.status(400).json({ error: 'ip required' });
+  if (!isValidIpv4(ip)) return res.status(400).json({ error: 'IP inválida' });
 
   const result = { ip, dns: null, http: null, https: null, mdns: null, nmap: null };
 
@@ -1835,7 +1947,7 @@ app.get('/api/network/identify', async (req, res) => {
     dns.reverse(ip, (err, hosts) => resolve(err ? null : (hosts[0] || null)));
   });
 
-  // 2-3. HTTP/HTTPS banner via SSH curl (handles self-signed certs, LAN-only devices)
+  // 2-3. HTTP/HTTPS banner via SSH curl — IP is validated as pure IPv4, safe to interpolate
   const curlHttp  = sshManager.exec(
     `curl -sk --max-time 3 -L "http://${ip}/" | grep -oi '<title[^>]*>[^<]*</title>' | sed 's/<[^>]*>//g' | head -1 2>/dev/null`
   ).catch(() => '');
@@ -1844,12 +1956,12 @@ app.get('/api/network/identify', async (req, res) => {
     `curl -sk --max-time 3 -L "https://${ip}/" | grep -oi '<title[^>]*>[^<]*</title>' | sed 's/<[^>]*>//g' | head -1 2>/dev/null`
   ).catch(() => '');
 
-  // 4. mDNS via avahi-browse
+  // 4. mDNS via avahi-browse — IP is validated, safe to interpolate
   const mdnsLookup = sshManager.exec(
     `avahi-browse -a --terminate --resolve -p 2>/dev/null | grep -F ";${ip};" | head -10`
   ).catch(() => '');
 
-  // 5. Nmap OS fingerprint (fast)
+  // 5. Nmap OS fingerprint (fast) — IP is validated, safe to interpolate
   const nmapScan = sshManager.exec(
     `nmap -O --osscan-guess -T4 -F ${ip} 2>/dev/null | grep -E 'OS guess|OS details|Running:|open/' | head -10`
   ).catch(() => '');
@@ -1887,6 +1999,7 @@ app.get('/api/network/identify', async (req, res) => {
 app.post('/api/network/scan-ports', async (req, res) => {
   const { ip } = req.body;
   if (!ip) return res.status(400).json({ error: 'IP is required' });
+  if (!isValidIpv4(ip)) return res.status(400).json({ error: 'IP inválida' });
 
   const portsToCheck = [22, 80, 443, 8123, 3000, 32400, 5432, 8080];
   const results = [];
@@ -2567,7 +2680,7 @@ wss.on('connection', async (ws, request) => {
 // Background metrics collection every 5 minutes
 setInterval(async () => {
   try {
-    if (!sshManager.connected) return;
+    if (!sshManager.isConnected) return; // Fix: was `sshManager.connected` which is always undefined
 
     // Fetch from our local endpoints
     const port = config.port || 3001;

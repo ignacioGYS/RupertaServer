@@ -25,8 +25,7 @@ services:
       POSTGRES_USER: ruperta
       POSTGRES_PASSWORD: ${DB_PASSWORD:-ruperta_secure_pass}
       POSTGRES_DB: ruperta_monitor
-    ports:
-      - "5432:5432"
+    # Puerto 5432 no expuesto al host — solo accesible desde el contenedor de la app
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

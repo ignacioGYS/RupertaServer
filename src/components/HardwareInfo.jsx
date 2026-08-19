@@ -290,7 +290,7 @@ function NetworkSection({ network }) {
             {network.cards.map((c, i) => (
               <div key={i} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '10px 12px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <span style={{ fontWeight: 600 }}>{c.device || 'Controlador de red'}</span>
-                <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{c.vendor} — PCI {c.slot}</span>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{c.vendor} — PCI {c.slot}</span>
               </div>
             ))}
           </div>
@@ -309,23 +309,114 @@ function StorageSection({ storage }) {
       {storage?.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {storage.map((d, i) => (
-            <div key={i} style={{ background: 'rgba(255,145,0,0.06)', border: '1px solid rgba(255,145,0,0.15)', borderRadius: '10px', padding: '14px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-              <span style={{ fontSize: '1.8rem' }}>{diskIcon(d)}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>/dev/{d.name}</span>
-                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: diskColor(d), background: `${diskColor(d)}22`, border: `1px solid ${diskColor(d)}44`, borderRadius: '4px', padding: '1px 7px' }}>{diskLabel(d)}</span>
-                  {d.temp !== undefined && d.temp !== null && (
-                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: d.temp > 50 ? 'var(--color-danger)' : d.temp > 40 ? 'var(--color-warning)' : 'var(--color-success)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', padding: '1px 7px', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Temperatura del disco">
-                      🌡️ {d.temp}°C
-                    </span>
-                  )}
-                </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-                  {d.model && d.model !== 'Unknown' && <span>{d.model} · </span>}
-                  <span style={{ color: '#FF9100', fontWeight: 600 }}>{d.size}</span>
+            <div key={i} style={{ background: 'rgba(255,145,0,0.06)', border: '1px solid rgba(255,145,0,0.15)', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.8rem', flexShrink: 0 }}>{diskIcon(d)}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>/dev/{d.name}</span>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: diskColor(d), background: `${diskColor(d)}22`, border: `1px solid ${diskColor(d)}44`, borderRadius: '4px', padding: '1px 7px' }}>{diskLabel(d)}</span>
+                    {d.temp !== undefined && d.temp !== null && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: d.temp > 50 ? 'var(--color-danger)' : d.temp > 40 ? 'var(--color-warning)' : 'var(--color-success)', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', padding: '1px 7px', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Temperatura del disco">
+                        🌡️ {d.temp}°C
+                      </span>
+                    )}
+                    {d.smart && d.smart.health && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 700, borderRadius: '4px', padding: '1px 7px',
+                        color: d.smart.health === 'PASSED' ? '#22c55e' : d.smart.health === 'FAILED' ? '#ef4444' : '#f97316',
+                        background: d.smart.health === 'PASSED' ? 'rgba(34,197,94,0.12)' : d.smart.health === 'FAILED' ? 'rgba(239,68,68,0.12)' : 'rgba(249,115,22,0.12)',
+                        border: `1px solid ${d.smart.health === 'PASSED' ? 'rgba(34,197,94,0.3)' : d.smart.health === 'FAILED' ? 'rgba(239,68,68,0.3)' : 'rgba(249,115,22,0.3)'}`,
+                      }} title="Estado S.M.A.R.T.">
+                        {d.smart.health === 'PASSED' ? '✔ SMART OK' : d.smart.health === 'FAILED' ? '✖ SMART FAIL' : '⚠ SMART WARN'}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                    {d.model && d.model !== 'Unknown' && <span>{d.model} · </span>}
+                    <span style={{ color: '#FF9100', fontWeight: 600 }}>{d.size}</span>
+                  </div>
                 </div>
               </div>
+
+              {d.smart && Object.keys(d.smart).some(k => k !== 'health' && d.smart[k] != null) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  {d.smart.powerOnHours != null && (() => {
+                    const h = d.smart.powerOnHours;
+                    const days = Math.floor(h / 24);
+                    const years = Math.floor(days / 365);
+                    const remDays = days % 365;
+                    const label = years > 0 ? `${years}a ${remDays}d` : `${days}d`;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                        <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>⏱ Encendido</span>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#4FACFE' }} title={`${h.toLocaleString()} horas`}>{label}</span>
+                        <span style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>{h.toLocaleString()}h</span>
+                      </div>
+                    );
+                  })()}
+                  {d.smart.powerCycles != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>🔄 Arranques</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a855f7' }}>{d.smart.powerCycles.toLocaleString()}</span>
+                    </div>
+                  )}
+                  {d.smart.reallocatedSectors != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: d.smart.reallocatedSectors > 0 ? 'rgba(249,115,22,0.08)' : 'rgba(255,255,255,0.04)', border: d.smart.reallocatedSectors > 0 ? '1px solid rgba(249,115,22,0.25)' : 'none', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>⚠ Reubicados</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: d.smart.reallocatedSectors > 0 ? '#f97316' : '#22c55e' }}>
+                        {d.smart.reallocatedSectors}
+                      </span>
+                    </div>
+                  )}
+                  {d.smart.pendingSectors != null && d.smart.pendingSectors > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                      <span style={{ fontSize: '0.6rem', color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>🔴 Sect. Pend.</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ef4444' }}>{d.smart.pendingSectors}</span>
+                    </div>
+                  )}
+                  {d.smart.wearLevel != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '110px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>📊 Desgaste (Wear)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100 - d.smart.wearLevel, 100)}%`, height: '100%', background: d.smart.wearLevel < 20 ? '#ef4444' : d.smart.wearLevel < 50 ? '#f97316' : '#22c55e', borderRadius: '3px' }} />
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#FF9100' }}>{d.smart.wearLevel}%</span>
+                      </div>
+                    </div>
+                  )}
+                  {d.smart.percentageUsed != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '120px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>📉 Vida útil usada</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(d.smart.percentageUsed, 100)}%`, height: '100%', background: d.smart.percentageUsed > 80 ? '#ef4444' : d.smart.percentageUsed > 50 ? '#f97316' : '#22c55e', borderRadius: '3px' }} />
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: d.smart.percentageUsed > 80 ? '#ef4444' : '#FF9100' }}>{d.smart.percentageUsed}%</span>
+                      </div>
+                    </div>
+                  )}
+                  {d.smart.availableSpare != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>🔋 Spare</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: d.smart.availableSpare < 20 ? '#f97316' : '#22c55e' }}>{d.smart.availableSpare}%</span>
+                    </div>
+                  )}
+                  {d.smart.tbWritten != null && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '6px 10px', minWidth: '72px' }}>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>✍ Escrito</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#4FACFE' }}>{d.smart.tbWritten.toLocaleString()} TB</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {d.smart === null && (
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  ℹ️ S.M.A.R.T. no disponible — para habilitarlo, agregá al sudoers en el servidor:<br/>
+                  <code style={{ fontSize: '0.7rem', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px' }}>nacho ALL=(ALL) NOPASSWD: /usr/bin/smartctl</code>
+                </p>
+              )}
             </div>
           ))}
         </div>
