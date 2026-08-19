@@ -1,5 +1,5 @@
 # Usamos Node.js oficial y ligero
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Nos paramos en la carpeta de trabajo del contenedor
 WORKDIR /app
