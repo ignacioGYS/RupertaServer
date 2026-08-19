@@ -1,6 +1,11 @@
 import { Client } from 'ssh2';
 import { config } from './config.js';
 
+function shellQuote(str) {
+  if (typeof str !== 'string') str = String(str);
+  return "'" + str.replace(/'/g, "'\\''") + "'";
+}
+
 class SSHClientManager {
   constructor() {
     this.client = null;
@@ -212,17 +217,15 @@ class SSHClientManager {
 
   sftpDelete(remotePath, isDirectory) {
     return this._enqueue(async () => {
+      if (isDirectory) {
+        return this.exec(`rm -rf ${shellQuote(remotePath)}`);
+      }
       const sftp = await this.getSftp();
       return new Promise((resolve, reject) => {
-        const cb = (err) => {
+        sftp.unlink(remotePath, (err) => {
           if (err) { this.sftpSession = null; return reject(err); }
           resolve();
-        };
-        if (isDirectory) {
-          sftp.rmdir(remotePath, cb);
-        } else {
-          sftp.unlink(remotePath, cb);
-        }
+        });
       });
     });
   }
