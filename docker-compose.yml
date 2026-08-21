@@ -10,6 +10,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - DB_HOST=postgres
     ports:
       - "3001:3001"
     extra_hosts:
@@ -25,7 +26,8 @@ services:
       POSTGRES_USER: ruperta
       POSTGRES_PASSWORD: ${DB_PASSWORD:-ruperta_secure_pass}
       POSTGRES_DB: ruperta_monitor
-    # Puerto 5432 no expuesto al host — solo accesible desde el contenedor de la app
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

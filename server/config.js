@@ -24,6 +24,7 @@ const ssh = {
   port: parseInt(process.env.SSH_PORT || '22', 10),
   username: process.env.SSH_USER || 'nacho',
   readyTimeout: parseInt(process.env.SSH_READY_TIMEOUT || '10000', 10),
+  keepaliveInterval: 10000,
 };
 
 if (process.env.SSH_PASSWORD) {
