@@ -1,4 +1,6 @@
+milesburton/DallasTemperature @ ^3.11.0
 bblanchon/ArduinoJson @ ^6.21.3
-adafruit/DHT sensor library @ ^1.4.6
 adafruit/Adafruit BME280 Library @ ^2.2.4
+adafruit/DHT sensor library @ ^1.4.6
 adafruit/Adafruit Unified Sensor @ ^1.1.14
+paulstoffregen/OneWire @ ^2.3.8

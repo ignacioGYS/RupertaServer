@@ -72,7 +72,8 @@ export default function SensorDashboard() {
 
   // Helper to find latest value for a specific sensor type or name
   const getLatestSensor = (type) => {
-    return sensors.find(s => s.sensor_type === type);
+    const sorted = [...sensors].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return sorted.find(s => s.sensor_type === type);
   };
 
   // Pivot historical data for Recharts
@@ -364,7 +365,9 @@ void loop() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Temperatura</span>
-                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>DHT22</span>
+                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
+                  {tempSensor ? tempSensor.sensor_name.replace('_temp', '').toUpperCase() : 'N/A'}
+                </span>
               </div>
               {tempSensor ? (
                 <div>
@@ -390,7 +393,9 @@ void loop() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Humedad Relativa</span>
-                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>DHT22</span>
+                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>
+                  {humiditySensor ? humiditySensor.sensor_name.replace('_hum', '').toUpperCase() : 'N/A'}
+                </span>
               </div>
               {humiditySensor ? (
                 <div>
@@ -420,7 +425,9 @@ void loop() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Presión Atmosférica</span>
-                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>BMP280</span>
+                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
+                  {pressureSensor ? pressureSensor.sensor_name.replace('_press', '').toUpperCase() : 'N/A'}
+                </span>
               </div>
               {pressureSensor ? (
                 <div>
@@ -446,7 +453,9 @@ void loop() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Calidad del Aire</span>
-                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>MQ135</span>
+                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>
+                  {co2Sensor ? co2Sensor.sensor_name.replace('_co2', '').toUpperCase() : 'N/A'}
+                </span>
               </div>
               {co2Sensor ? (
                 <div>
