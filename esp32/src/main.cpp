@@ -26,7 +26,7 @@ const char* password = "j5zCAcmFA6";
 const char* serverUrl = "http://192.168.1.63:3001/api/sensors/data";
 
 // Intervalo de envío en milisegundos (ej: 30000 ms = 30 segundos)
-const unsigned long sendInterval = 30000;
+const unsigned long sendInterval = 30000; // 30 segundos
 unsigned long lastSendTime = 0;
 
 void connectWiFi() {

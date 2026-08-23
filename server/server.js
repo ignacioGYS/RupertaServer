@@ -2520,6 +2520,10 @@ setInterval(runHealthPing, 5000);
 // Run once on startup after a short delay
 setTimeout(runHealthPing, 3000);
 
+// In-memory cache for real-time telemetry and database rate-limiting
+const latestSensorsCache = {};
+const lastDbInsertTimes = {};
+
 // Sensor API Routes for ESP32 and telemetry dashboard
 app.post('/api/sensors/data', async (req, res) => {
   try {
@@ -2544,15 +2548,42 @@ app.post('/api/sensors/data', async (req, res) => {
       return res.status(400).json({ error: 'No se enviaron lecturas de sensores válidas.' });
     }
 
-    const promises = validReadings.map(r => {
-      return query(
-        `INSERT INTO sensor_readings (sensor_name, sensor_type, value, unit) VALUES ($1, $2, $3, $4)`,
-        [r.sensor_name.trim(), r.sensor_type.trim(), parseFloat(r.value), r.unit ? r.unit.trim() : '']
-      );
-    });
+    const now = Date.now();
+    const dbPromises = [];
 
-    await Promise.all(promises);
-    res.json({ success: true, count: validReadings.length });
+    for (const r of validReadings) {
+      const name = r.sensor_name.trim();
+      const type = r.sensor_type.trim();
+      const val = parseFloat(r.value);
+      const unit = r.unit ? r.unit.trim() : '';
+
+      // Update in-memory cache for real-time screen display
+      latestSensorsCache[name] = {
+        sensor_name: name,
+        sensor_type: type,
+        value: val,
+        unit: unit,
+        timestamp: new Date().toISOString()
+      };
+
+      // Write to DB only every 5 minutes (300,000 ms) per sensor to optimize DB size
+      const lastInsert = lastDbInsertTimes[name] || 0;
+      if (now - lastInsert >= 300000) {
+        dbPromises.push(
+          query(
+            `INSERT INTO sensor_readings (sensor_name, sensor_type, value, unit) VALUES ($1, $2, $3, $4)`,
+            [name, type, val, unit]
+          )
+        );
+        lastDbInsertTimes[name] = now;
+      }
+    }
+
+    if (dbPromises.length > 0) {
+      await Promise.all(dbPromises);
+    }
+    
+    res.json({ success: true, count: validReadings.length, cached: true });
   } catch (error) {
     console.error('[Sensors API] Error storing readings:', error.message);
     res.status(500).json({ error: 'Error interno al almacenar lecturas de sensores.' });
@@ -2567,7 +2598,27 @@ app.get('/api/sensors/latest', async (req, res) => {
       FROM sensor_readings 
       ORDER BY sensor_name, timestamp DESC
     `);
-    res.json({ sensors: result.rows });
+    
+    // Merge database results with in-memory cache to return real-time values
+    const mergedSensors = {};
+    
+    // First, populate with database results
+    result.rows.forEach(row => {
+      mergedSensors[row.sensor_name] = {
+        sensor_name: row.sensor_name,
+        sensor_type: row.sensor_type,
+        value: row.value,
+        unit: row.unit,
+        timestamp: row.timestamp
+      };
+    });
+    
+    // Overwrite with in-memory cache (real-time)
+    Object.values(latestSensorsCache).forEach(cached => {
+      mergedSensors[cached.sensor_name] = cached;
+    });
+    
+    res.json({ sensors: Object.values(mergedSensors) });
   } catch (error) {
     console.error('[Sensors API] Error getting latest readings:', error.message);
     res.status(500).json({ error: 'Error al obtener últimas lecturas de sensores.' });
