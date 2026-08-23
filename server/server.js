@@ -2520,6 +2520,80 @@ setInterval(runHealthPing, 5000);
 // Run once on startup after a short delay
 setTimeout(runHealthPing, 3000);
 
+// Sensor API Routes for ESP32 and telemetry dashboard
+app.post('/api/sensors/data', async (req, res) => {
+  try {
+    let readings = [];
+    if (Array.isArray(req.body)) {
+      readings = req.body;
+    } else if (req.body && req.body.readings && Array.isArray(req.body.readings)) {
+      readings = req.body.readings;
+    } else if (req.body) {
+      readings = [req.body];
+    }
+
+    // Validate readings
+    const validReadings = readings.filter(r => 
+      r && 
+      typeof r.sensor_name === 'string' && r.sensor_name.trim() !== '' &&
+      typeof r.sensor_type === 'string' && r.sensor_type.trim() !== '' &&
+      r.value !== undefined && r.value !== null && !isNaN(parseFloat(r.value))
+    );
+
+    if (validReadings.length === 0) {
+      return res.status(400).json({ error: 'No se enviaron lecturas de sensores válidas.' });
+    }
+
+    const promises = validReadings.map(r => {
+      return query(
+        `INSERT INTO sensor_readings (sensor_name, sensor_type, value, unit) VALUES ($1, $2, $3, $4)`,
+        [r.sensor_name.trim(), r.sensor_type.trim(), parseFloat(r.value), r.unit ? r.unit.trim() : '']
+      );
+    });
+
+    await Promise.all(promises);
+    res.json({ success: true, count: validReadings.length });
+  } catch (error) {
+    console.error('[Sensors API] Error storing readings:', error.message);
+    res.status(500).json({ error: 'Error interno al almacenar lecturas de sensores.' });
+  }
+});
+
+app.get('/api/sensors/latest', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT DISTINCT ON (sensor_name) 
+        sensor_name, sensor_type, value, unit, timestamp 
+      FROM sensor_readings 
+      ORDER BY sensor_name, timestamp DESC
+    `);
+    res.json({ sensors: result.rows });
+  } catch (error) {
+    console.error('[Sensors API] Error getting latest readings:', error.message);
+    res.status(500).json({ error: 'Error al obtener últimas lecturas de sensores.' });
+  }
+});
+
+app.get('/api/sensors/history', async (req, res) => {
+  try {
+    let hours = parseInt(req.query.hours) || 24;
+    if (hours < 1) hours = 1;
+    if (hours > 720) hours = 720; // Máximo 30 días para evitar sobrecarga
+
+    const result = await query(
+      `SELECT timestamp, sensor_name, sensor_type, value, unit 
+       FROM sensor_readings 
+       WHERE timestamp > NOW() - $1::interval
+       ORDER BY timestamp ASC`,
+      [`${hours} hours`]
+    );
+    res.json({ history: result.rows });
+  } catch (error) {
+    console.error('[Sensors API] Error getting history:', error.message);
+    res.status(500).json({ error: 'Error al obtener historial de sensores.' });
+  }
+});
+
 // Serve built frontend in production (after npm run build)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));

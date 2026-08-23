@@ -93,8 +93,22 @@ export const initializeDb = async () => {
       )
     `);
 
+    // Sensor readings table
+    await query(`
+      CREATE TABLE IF NOT EXISTS sensor_readings (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        sensor_name VARCHAR(100) NOT NULL,
+        sensor_type VARCHAR(50) NOT NULL,
+        value REAL NOT NULL,
+        unit VARCHAR(20)
+      )
+    `);
+
     await query(`CREATE INDEX IF NOT EXISTS idx_network_microcuts_time ON network_microcuts (started_at)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_network_speedtests_time ON network_speedtests (timestamp)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_sensor_readings_time ON sensor_readings (timestamp)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_sensor_readings_name ON sensor_readings (sensor_name)`);
 
     console.log('✅ Base de datos PostgreSQL lista y conectada.');
   } catch (error) {

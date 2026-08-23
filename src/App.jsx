@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, ShieldCheck, Server as HardwareIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, Thermometer } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -10,6 +10,7 @@ import HardwareInfo from './components/HardwareInfo';
 import GpuMonitor from './components/GpuMonitor';
 import NetworkMonitor from './components/NetworkMonitor';
 import Lights from './components/Lights';
+import SensorDashboard from './components/SensorDashboard';
 import { useUploads } from './context/UploadContext';
 
 function UploadStatusPanel({ onClose }) {
@@ -225,6 +226,7 @@ function App() {
     { id: 'gpu', label: 'Monitoreo GPU', icon: <GpuIcon />, component: <GpuMonitor /> },
     { id: 'network', label: 'Red y Conexiones', icon: <Network />, component: <NetworkMonitor /> },
     { id: 'lights', label: 'Luces', icon: <Lightbulb />, component: <Lights /> },
+    { id: 'sensors', label: 'Sensores IoT', icon: <Thermometer />, component: <SensorDashboard /> },
     { id: 'files', label: 'Archivos (SFTP)', icon: <Folder />, component: <FileExplorer /> },
     { id: 'terminal', label: 'Terminal SSH', icon: <TermIcon />, component: <Terminal /> }
   ];
@@ -245,6 +247,8 @@ function App() {
         return { title: 'Red y Conexiones', subtitle: 'Dispositivos en la red local y conexiones activas al servidor' };
       case 'lights':
         return { title: 'Luces', subtitle: 'Control de luces inteligentes WiZ en la red local' };
+      case 'sensors':
+        return { title: 'Sensores IoT (ESP32)', subtitle: 'Lecturas de temperatura, humedad, presión y calidad del aire en tiempo real' };
       case 'files':
         return { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' };
       case 'terminal':
