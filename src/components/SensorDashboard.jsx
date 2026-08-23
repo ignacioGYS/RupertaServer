@@ -47,21 +47,21 @@ export default function SensorDashboard() {
     if (isMounted.current) setLoading(false);
   };
 
-  // Poll latest data every 10 seconds
+  // Poll latest data every 10 seconds, history every 60 seconds
   useEffect(() => {
     isMounted.current = true;
-    loadAllData();
+    loadAllData(timeRange);
 
-    const interval = setInterval(fetchLatest, 10000);
+    const latestInterval = setInterval(fetchLatest, 10000);
+    const historyInterval = setInterval(() => {
+      fetchHistory(timeRange);
+    }, 60000);
+
     return () => {
       isMounted.current = false;
-      clearInterval(interval);
+      clearInterval(latestInterval);
+      clearInterval(historyInterval);
     };
-  }, []);
-
-  // Reload history when timeRange changes
-  useEffect(() => {
-    fetchHistory(timeRange);
   }, [timeRange]);
 
   const copyToClipboard = () => {
