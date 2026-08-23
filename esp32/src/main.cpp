@@ -5,17 +5,15 @@
 
 // --- CONFIGURACIÓN DE HARDWARE ---
 // Define si quieres usar sensores reales o simulados para probar la API rápidamente
-#define USE_REAL_SENSORS 0 // Cambia a 1 para usar sensores reales
+#define USE_REAL_SENSORS 1 // Cambia a 1 para usar sensores reales
 
 #if USE_REAL_SENSORS
-  #include <DHT.h>
-  #include <Adafruit_BME280.h>
-  #include <Wire.h>
+  #include <OneWire.h>
+  #include <DallasTemperature.h>
 
-  #define DHTPIN 4
-  #define DHTTYPE DHT22
-  DHT dht(DHTPIN, DHTTYPE);
-  Adafruit_BME280 bme;
+  #define ONE_WIRE_BUS 4 // Pin de datos (GPIO 4)
+  OneWire oneWire(ONE_WIRE_BUS);
+  DallasTemperature sensors(&oneWire);
 #endif
 
 // --- CONFIGURACIÓN DE RED & SERVIDOR ---
@@ -60,11 +58,8 @@ void setup() {
   connectWiFi();
 
   #if USE_REAL_SENSORS
-    Serial.println("Inicializando sensores físicos...");
-    dht.begin();
-    if (!bme.begin(0x76)) {  // Dirección I2C común para BME280
-      Serial.println("¡No se encontró el sensor BME280! Revisa la conexión I2C.");
-    }
+    Serial.println("Inicializando sensores físicos (DS18B20)...");
+    sensors.begin();
   #else
     Serial.println("Corriendo en MODO SIMULACIÓN (sensores desactivados)");
   #endif
@@ -88,21 +83,23 @@ void loop() {
       float co2 = 0.0;
 
       #if USE_REAL_SENSORS
-        // 1. Lectura de sensores físicos
-        temp = dht.readTemperature();
-        hum = dht.readHumidity();
-        press = bme.readPressure() / 100.0F; // Convertir Pa a hPa
+        // 1. Lectura del sensor DS18B20 real
+        sensors.requestTemperatures();
+        temp = sensors.getTempCByIndex(0);
         
-        // Sensor de calidad del aire analógico (MQ135 en pin A0/GPIO36)
-        int mqValue = analogRead(36);
-        co2 = map(mqValue, 0, 4095, 350, 2000); // Mapeo simulado de PPM
-
-        // Validar lecturas
-        if (isnan(temp) || isnan(hum)) {
-          Serial.println("¡Error al leer del sensor DHT!");
-          temp = 20.0; // Valores fallback
-          hum = 50.0;
+        if (temp == DEVICE_DISCONNECTED_C) {
+          Serial.println("¡Error: Sensor DS18B20 no detectado! Usando valor fallback.");
+          temp = 22.0;
+        } else {
+          Serial.print("Lectura DS18B20: ");
+          Serial.print(temp);
+          Serial.println(" °C");
         }
+
+        // Simulamos humedad, presión y co2 porque no tenemos esos sensores físicamente
+        hum = 55.0 + random(-50, 50) / 10.0;
+        press = 1013.2 + random(-10, 10) / 10.0;
+        co2 = 400.0 + random(0, 300);
       #else
         // 2. Lecturas simuladas para testing
         temp = 22.0 + random(-20, 20) / 10.0;
@@ -117,7 +114,11 @@ void loop() {
 
       // Sensor 1: Temperatura
       JsonObject r1 = readings.createNestedObject();
-      r1["sensor_name"] = "dht22_temp";
+      #if USE_REAL_SENSORS
+        r1["sensor_name"] = "ds18b20_temp";
+      #else
+        r1["sensor_name"] = "dht22_temp";
+      #endif
       r1["sensor_type"] = "temperature";
       r1["value"] = temp;
       r1["unit"] = "°C";

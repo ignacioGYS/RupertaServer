@@ -574,6 +574,17 @@ void loop() {
                         fill="url(#colorTemp)" 
                       />
                     )}
+                    {sensors.some(s => s.sensor_name === 'ds18b20_temp') && (
+                      <Area 
+                        name="Temperatura (°C)" 
+                        type="monotone" 
+                        dataKey="ds18b20_temp" 
+                        stroke="#FF1744" 
+                        strokeWidth={2}
+                        fillOpacity={1} 
+                        fill="url(#colorTemp)" 
+                      />
+                    )}
                     {sensors.some(s => s.sensor_name === 'dht22_hum') && (
                       <Area 
                         name="Humedad (%)" 
