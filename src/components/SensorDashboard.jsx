@@ -80,8 +80,8 @@ export default function SensorDashboard() {
     if (!sensor || !sensor.timestamp) return false;
     const readingTime = new Date(sensor.timestamp).getTime();
     const now = Date.now();
-    // Consider active if updated in the last 3 minutes (180,000 ms)
-    return (now - readingTime) < 180000;
+    // Tolerancia de 30 minutos (1,800,000 ms) con valor absoluto para tolerar desincronizaciones horarias
+    return Math.abs(now - readingTime) < 1800000;
   };
 
   // Pivot historical data for Recharts
