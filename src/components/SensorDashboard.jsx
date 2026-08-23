@@ -76,6 +76,14 @@ export default function SensorDashboard() {
     return sorted.find(s => s.sensor_type === type);
   };
 
+  const isSensorActive = (sensor) => {
+    if (!sensor || !sensor.timestamp) return false;
+    const readingTime = new Date(sensor.timestamp).getTime();
+    const now = Date.now();
+    // Consider active if updated in the last 3 minutes (180,000 ms)
+    return (now - readingTime) < 180000;
+  };
+
   // Pivot historical data for Recharts
   const getChartData = () => {
     const grouped = {};
@@ -369,7 +377,7 @@ void loop() {
                   {tempSensor ? tempSensor.sensor_name.replace('_temp', '').toUpperCase() : 'N/A'}
                 </span>
               </div>
-              {tempSensor ? (
+              {tempSensor && isSensorActive(tempSensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                     <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getTempColor(tempSensor.value) }}>
@@ -382,7 +390,16 @@ void loop() {
                   </p>
                 </div>
               ) : (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin lecturas registradas</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
+                      ---
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
+                    No se está midiendo
+                  </p>
+                </div>
               )}
             </div>
 
@@ -397,7 +414,7 @@ void loop() {
                   {humiditySensor ? humiditySensor.sensor_name.replace('_hum', '').toUpperCase() : 'N/A'}
                 </span>
               </div>
-              {humiditySensor ? (
+              {humiditySensor && isSensorActive(humiditySensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                     <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--color-secondary)' }}>
@@ -414,7 +431,17 @@ void loop() {
                   </p>
                 </div>
               ) : (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin lecturas registradas</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
+                      ---
+                    </span>
+                  </div>
+                  <div style={{ background: 'rgba(255,255,255,0.05)', width: '100%', height: '4px', borderRadius: '2px', marginTop: '8px' }} />
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
+                    No se está midiendo
+                  </p>
+                </div>
               )}
             </div>
 
@@ -429,7 +456,7 @@ void loop() {
                   {pressureSensor ? pressureSensor.sensor_name.replace('_press', '').toUpperCase() : 'N/A'}
                 </span>
               </div>
-              {pressureSensor ? (
+              {pressureSensor && isSensorActive(pressureSensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                     <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
@@ -442,7 +469,16 @@ void loop() {
                   </p>
                 </div>
               ) : (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin lecturas registradas</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
+                      ---
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
+                    No se está midiendo
+                  </p>
+                </div>
               )}
             </div>
 
@@ -457,7 +493,7 @@ void loop() {
                   {co2Sensor ? co2Sensor.sensor_name.replace('_co2', '').toUpperCase() : 'N/A'}
                 </span>
               </div>
-              {co2Sensor ? (
+              {co2Sensor && isSensorActive(co2Sensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
                     <span style={{ 
@@ -478,7 +514,16 @@ void loop() {
                   </div>
                 </div>
               ) : (
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Sin lecturas registradas</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
+                      ---
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
+                    No se está midiendo
+                  </p>
+                </div>
               )}
             </div>
 

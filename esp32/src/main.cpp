@@ -95,24 +95,16 @@ void loop() {
           Serial.print(temp);
           Serial.println(" °C");
         }
-
-        // Simulamos humedad, presión y co2 porque no tenemos esos sensores físicamente
-        hum = 55.0 + random(-50, 50) / 10.0;
-        press = 1013.2 + random(-10, 10) / 10.0;
-        co2 = 400.0 + random(0, 300);
       #else
         // 2. Lecturas simuladas para testing
         temp = 22.0 + random(-20, 20) / 10.0;
-        hum = 60.0 + random(-50, 50) / 10.0;
-        press = 1013.2 + random(-10, 10) / 10.0;
-        co2 = 400.0 + random(0, 300);
       #endif
 
-      // 3. Crear el documento JSON
-      StaticJsonDocument<1024> doc;
+      // 3. Crear el documento JSON (solo con temperatura)
+      StaticJsonDocument<256> doc;
       JsonArray readings = doc.to<JsonArray>();
 
-      // Sensor 1: Temperatura
+      // Sensor: Temperatura
       JsonObject r1 = readings.createNestedObject();
       #if USE_REAL_SENSORS
         r1["sensor_name"] = "ds18b20_temp";
@@ -122,27 +114,6 @@ void loop() {
       r1["sensor_type"] = "temperature";
       r1["value"] = temp;
       r1["unit"] = "°C";
-
-      // Sensor 2: Humedad
-      JsonObject r2 = readings.createNestedObject();
-      r2["sensor_name"] = "dht22_hum";
-      r2["sensor_type"] = "humidity";
-      r2["value"] = hum;
-      r2["unit"] = "%";
-
-      // Sensor 3: Presión
-      JsonObject r3 = readings.createNestedObject();
-      r3["sensor_name"] = "bmp280_press";
-      r3["sensor_type"] = "pressure";
-      r3["value"] = press;
-      r3["unit"] = "hPa";
-
-      // Sensor 4: Calidad del aire
-      JsonObject r4 = readings.createNestedObject();
-      r4["sensor_name"] = "mq135_co2";
-      r4["sensor_type"] = "air_quality";
-      r4["value"] = co2;
-      r4["unit"] = "PPM";
 
       String payload;
       serializeJson(doc, payload);
