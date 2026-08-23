@@ -599,6 +599,7 @@ void loop() {
                       fontSize={10} 
                       dx={-5}
                       tickLine={false}
+                      domain={['auto', 'auto']}
                     />
                     <Tooltip 
                       contentStyle={{ 
