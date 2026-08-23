@@ -16,7 +16,7 @@ export default function SensorDashboard() {
 
   const fetchLatest = async () => {
     try {
-      const res = await fetch('/api/sensors/latest');
+      const res = await fetch(`/api/sensors/latest?_t=${Date.now()}`);
       if (!res.ok) throw new Error('Error al conectar con la API de Ruperta');
       const data = await res.json();
       if (isMounted.current) {
@@ -30,7 +30,7 @@ export default function SensorDashboard() {
 
   const fetchHistory = async (hours) => {
     try {
-      const res = await fetch(`/api/sensors/history?hours=${hours}`);
+      const res = await fetch(`/api/sensors/history?hours=${hours}&_t=${Date.now()}`);
       if (!res.ok) throw new Error('Error al obtener el historial');
       const data = await res.json();
       if (isMounted.current) {
