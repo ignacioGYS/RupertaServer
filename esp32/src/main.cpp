@@ -21,8 +21,8 @@
 #define ZH06_TX 17
 
 // Comandos del ZH06
-const uint8_t CMD_SLEEP[9]  = {0xFF, 0x01, 0xA7, 0x01, 0x00, 0x00, 0x00, 0x00, 0x57};
-const uint8_t CMD_WAKEUP[9] = {0xFF, 0x01, 0xA7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x58};
+const uint8_t CMD_SLEEP[9]  = {0xFF, 0x01, 0xA7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x58};
+const uint8_t CMD_WAKEUP[9] = {0xFF, 0x01, 0xA7, 0x01, 0x00, 0x00, 0x00, 0x00, 0x57};
 
 // Variables de estado del ZH06
 bool zh06Awake = false;
@@ -91,30 +91,35 @@ void zh06Wakeup() {
 
 // Leer trama del ZH06 (protocolo compatible PMS - cabecera 0x42 0x4D)
 bool zh06Read(int &pm1, int &pm25, int &pm10) {
-  // Vaciar buffer viejo
-  while (Serial2.available()) {
-    // Buscar cabecera 0x42
-    if (Serial2.read() == 0x42) {
-      if (Serial2.available() < 31) {
-        delay(50); // Esperar que llegue el resto de la trama
-        if (Serial2.available() < 31) return false;
+  // 1. Limpiar el buffer acumulado durante los 30 segundos de precalentamiento
+  while (Serial2.available() > 0) {
+    Serial2.read();
+  }
+  
+  // 2. Esperar una trama nueva y fresca (tiempo límite de 2 segundos)
+  unsigned long startTimeout = millis();
+  while (millis() - startTimeout < 2000) {
+    if (Serial2.available() > 0 && Serial2.read() == 0x42) {
+      // Encontró el byte de inicio, esperar a que lleguen los otros 31 bytes de la trama
+      unsigned long frameTimeout = millis();
+      while (Serial2.available() < 31) {
+        if (millis() - frameTimeout > 200) {
+          Serial.println("[ZH06] Error: Tiempo de espera agotado para completar la trama.");
+          return false;
+        }
+        delay(5);
       }
       
-      uint8_t buf[31];
+      uint8_t buf[32];
       buf[0] = 0x42;
-      Serial2.readBytes(&buf[1], 30); // Leer los 30 bytes restantes (total 32 con 0x42 prepend)
+      Serial2.readBytes(&buf[1], 31); // Leer los 31 bytes restantes
       
       // Verificar segundo byte de cabecera
-      if (buf[1] != 0x4D) continue;
-      
-      // Calcular checksum
-      uint16_t checksum = 0;
-      for (int i = 0; i < 30; i++) {
-        checksum += buf[i];
+      if (buf[1] != 0x4D) {
+        Serial.print("[ZH06] Error: Segundo byte incorrecto: 0x");
+        Serial.println(buf[1], HEX);
+        continue; // Seguir buscando otra trama
       }
-      uint16_t frameCheck = (buf[30] << 8) | buf[31 - 1];
-      // Nota: en algunas implementaciones el checksum puede variar,
-      // usamos los datos atmosféricos (bytes 10-15) que son más representativos
       
       // PM1.0 atmosférico (bytes 10-11)
       pm1  = (buf[10] << 8) | buf[11];
@@ -125,7 +130,9 @@ bool zh06Read(int &pm1, int &pm25, int &pm10) {
       
       return true;
     }
+    delay(1);
   }
+  Serial.println("[ZH06] Error: No se detectó el byte de inicio 0x42 en 2 segundos.");
   return false;
 }
 
@@ -219,8 +226,8 @@ void loop() {
         temp = 22.0 + random(-20, 20) / 10.0;
       #endif
 
-      // Construir JSON con temperatura + últimas lecturas de PM (si existen)
-      StaticJsonDocument<512> doc;
+      // Construir JSON solo con temperatura
+      StaticJsonDocument<256> doc;
       JsonArray readings = doc.to<JsonArray>();
 
       // Sensor: Temperatura
@@ -229,27 +236,6 @@ void loop() {
       r1["sensor_type"] = "temperature";
       r1["value"] = temp;
       r1["unit"] = "°C";
-
-      // Si tenemos datos del ZH06, incluirlos en cada envío para actualizar la pantalla
-      if (zh06HasData) {
-        JsonObject r2 = readings.createNestedObject();
-        r2["sensor_name"] = "zh06_pm25";
-        r2["sensor_type"] = "air_quality";
-        r2["value"] = lastPM25;
-        r2["unit"] = "µg/m³";
-
-        JsonObject r3 = readings.createNestedObject();
-        r3["sensor_name"] = "zh06_pm10";
-        r3["sensor_type"] = "particulate";
-        r3["value"] = lastPM10;
-        r3["unit"] = "µg/m³";
-
-        JsonObject r4 = readings.createNestedObject();
-        r4["sensor_name"] = "zh06_pm1";
-        r4["sensor_type"] = "particulate_fine";
-        r4["value"] = lastPM1;
-        r4["unit"] = "µg/m³";
-      }
 
       String payload;
       serializeJson(doc, payload);
@@ -280,11 +266,39 @@ void loop() {
       Serial.print("  PM10:   "); Serial.print(pm10); Serial.println(" µg/m³");
       Serial.println("═══════════════════════════════════════");
       
-      // Guardar lecturas para incluir en próximos envíos de temperatura
+      // Guardar lecturas en memoria
       lastPM1 = pm1;
       lastPM25 = pm25;
       lastPM10 = pm10;
       zh06HasData = true;
+
+      // Enviar inmediatamente a Ruperta el reporte de calidad de aire
+      if (WiFi.status() == WL_CONNECTED) {
+        StaticJsonDocument<512> pmDoc;
+        JsonArray pmReadings = pmDoc.to<JsonArray>();
+
+        JsonObject r2 = pmReadings.createNestedObject();
+        r2["sensor_name"] = "zh06_pm25";
+        r2["sensor_type"] = "air_quality";
+        r2["value"] = pm25;
+        r2["unit"] = "µg/m³";
+
+        JsonObject r3 = pmReadings.createNestedObject();
+        r3["sensor_name"] = "zh06_pm10";
+        r3["sensor_type"] = "particulate";
+        r3["value"] = pm10;
+        r3["unit"] = "µg/m³";
+
+        JsonObject r4 = pmReadings.createNestedObject();
+        r4["sensor_name"] = "zh06_pm1";
+        r4["sensor_type"] = "particulate_fine";
+        r4["value"] = pm1;
+        r4["unit"] = "µg/m³";
+
+        String pmPayload;
+        serializeJson(pmDoc, pmPayload);
+        sendToRuperta(pmPayload);
+      }
     } else {
       Serial.println("[ZH06] No se pudo leer la trama. Reintentando en el próximo ciclo.");
     }

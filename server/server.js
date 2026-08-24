@@ -2579,6 +2579,60 @@ app.post('/api/sensors/data', async (req, res) => {
       }
     }
 
+    // Algoritmo matemático de clasificación de origen de partículas en el Backend
+    const pm25Obj = validReadings.find(r => r.sensor_name === 'zh06_pm25');
+    const pm10Obj = validReadings.find(r => r.sensor_name === 'zh06_pm10');
+    const pm1Obj = validReadings.find(r => r.sensor_name === 'zh06_pm1');
+
+    if (pm25Obj && pm10Obj && pm1Obj) {
+      const pm25 = parseFloat(pm25Obj.value);
+      const pm10 = parseFloat(pm10Obj.value);
+      const pm1 = parseFloat(pm1Obj.value);
+
+      const r_uf = pm10 === 0 ? 0 : pm1 / pm10;
+      const r_fg = pm10 === 0 ? 0 : pm25 / pm10;
+
+      let classification = 5; // 0=Aire Limpio, 1=Cocina/Fritura, 2=Tránsito/Escape Diésel (Avenida), 3=Polvo de Calle/Tierra, 4=Humo General/Mala Ventilación, 5=Desconocido
+
+      if (pm25 <= 12) {
+        classification = 0; // Aire Limpio
+      } else if (pm10 >= 250 && pm25 >= 200 && (pm10 - pm25) >= 30) {
+        classification = 1; // Cocina / Fritura
+      } else if (r_uf >= 0.70 && pm25 > 25) {
+        classification = 2; // Tránsito / Escape Diésel (Avenida)
+      } else if (r_fg < 0.45 && pm10 > 50) {
+        classification = 3; // Polvo de Calle / Tierra
+      } else if (pm25 > 25) {
+        classification = 4; // Humo General / Mala Ventilación
+      }
+
+      const name = 'zh06_source';
+      const type = 'air_quality_source';
+      const val = classification;
+      const unit = '';
+
+      // Actualizar caché de tiempo real
+      latestSensorsCache[name] = {
+        sensor_name: name,
+        sensor_type: type,
+        value: val,
+        unit: unit,
+        timestamp: new Date().toISOString()
+      };
+
+      // Guardar en base de datos cada 5 minutos
+      const lastInsert = lastDbInsertTimes[name] || 0;
+      if (now - lastInsert >= 300000) {
+        dbPromises.push(
+          query(
+            `INSERT INTO sensor_readings (sensor_name, sensor_type, value, unit) VALUES ($1, $2, $3, $4)`,
+            [name, type, val, unit]
+          )
+        );
+        lastDbInsertTimes[name] = now;
+      }
+    }
+
     if (dbPromises.length > 0) {
       await Promise.all(dbPromises);
     }
@@ -2642,6 +2696,46 @@ app.get('/api/sensors/history', async (req, res) => {
   } catch (error) {
     console.error('[Sensors API] Error getting history:', error.message);
     res.status(500).json({ error: 'Error al obtener historial de sensores.' });
+  }
+});
+
+// Endpoint para estadísticas de máximos (24h, 7d y histórico) por sensor con sus respectivas fechas/horas
+app.get('/api/sensors/stats', async (req, res) => {
+  try {
+    const result = await query(`
+      WITH hist_max AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
+        FROM sensor_readings
+      ),
+      m24h AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
+        FROM sensor_readings
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+      ),
+      m7d AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
+        FROM sensor_readings
+        WHERE timestamp > NOW() - INTERVAL '7 days'
+      )
+      SELECT 
+        h.sensor_name,
+        h.value as max_historic,
+        h.timestamp as time_historic,
+        m.value as max_24h,
+        m.timestamp as time_24h,
+        d.value as max_7d,
+        d.timestamp as time_7d
+      FROM (SELECT sensor_name, value, timestamp FROM hist_max WHERE rn = 1) h
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m24h WHERE rn = 1) m ON h.sensor_name = m.sensor_name
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m7d WHERE rn = 1) d ON h.sensor_name = d.sensor_name
+    `);
+    res.json({ stats: result.rows });
+  } catch (error) {
+    console.error('[Sensors API] Error getting sensor stats:', error.message);
+    res.status(500).json({ error: 'Error al obtener estadísticas de sensores.' });
   }
 });
 
