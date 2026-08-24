@@ -320,6 +320,14 @@ export default function SensorDashboard() {
     return { label: 'Mala', color: 'var(--color-danger)' };
   };
 
+  const getPM1Status = (value) => {
+    if (value <= 8) return { label: 'Excelente', color: 'var(--color-success)', desc: 'Nivel óptimo de partículas ultrafinas.' };
+    if (value <= 15) return { label: 'Aceptable', color: '#4FACFE', desc: 'Calidad del aire aceptable.' };
+    if (value <= 25) return { label: 'Moderada', color: 'var(--color-warning)', desc: 'Posible molestia leve en personas sensibles.' };
+    if (value <= 50) return { label: 'Mala', color: '#FF6D00', desc: 'Se aconseja reducir exposición prolongada.' };
+    return { label: 'Peligrosa', color: 'var(--color-danger)', desc: 'Alerta: evite permanecer en el ambiente.' };
+  };
+
   const getTempColor = (temp) => {
     if (temp < 18) return '#4FACFE'; // Cold
     if (temp <= 27) return '#00E676'; // Comfortable
@@ -695,7 +703,7 @@ void loop() {
             {/* PM1.0 Card */}
             <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
-                <Droplets size={100} style={{ color: '#E040FB' }} />
+                <Droplets size={100} style={{ color: pm1Sensor && isSensorActive(pm1Sensor) ? getPM1Status(pm1Sensor.value).color : '#E040FB' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -711,14 +719,17 @@ void loop() {
               {pm1Sensor && isSensorActive(pm1Sensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: '#E040FB' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getPM1Status(pm1Sensor.value).color }}>
                       {pm1Sensor.value.toFixed(0)}
                     </span>
                     <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
                   </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Actualizado: {new Date(pm1Sensor.timestamp).toLocaleTimeString()}
-                  </p>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getPM1Status(pm1Sensor.value).color }}>
+                      {getPM1Status(pm1Sensor.value).label}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>— {getPM1Status(pm1Sensor.value).desc}</span>
+                  </div>
                   {renderStatsGrid('zh06_pm1', ' µg/m³', 0)}
                 </div>
               ) : (
