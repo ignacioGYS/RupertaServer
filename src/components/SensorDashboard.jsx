@@ -273,26 +273,33 @@ export default function SensorDashboard() {
     };
   };
 
-  // Pivot historical data for Recharts
+  // Pivot historical data for Recharts grouping by 5-minute intervals to align asynchronous readings
   const getChartData = () => {
     const grouped = {};
     history.forEach(item => {
       const date = new Date(item.timestamp);
-      // Format X-axis depending on time range
+      
+      // Round to nearest 5 minutes (300000 ms) for visual alignment
+      const roundedTime = Math.round(date.getTime() / 300000) * 300000;
+      const roundedDate = new Date(roundedTime);
+      const key = roundedDate.toISOString();
+
       let label = '';
       if (timeRange <= 24) {
-        label = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        label = roundedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       } else {
-        label = `${date.getDate()} ${date.toLocaleDateString([], { month: 'short' })} ${date.getHours()}:00`;
+        label = `${roundedDate.getDate()} ${roundedDate.toLocaleDateString([], { month: 'short' })} ${roundedDate.getHours()}:00`;
       }
       
-      if (!grouped[item.timestamp]) {
-        grouped[item.timestamp] = { 
-          timestamp: item.timestamp,
+      if (!grouped[key]) {
+        grouped[key] = { 
+          timestamp: key,
           label: label 
         };
       }
-      grouped[item.timestamp][item.sensor_name] = parseFloat(item.value.toFixed(1));
+      
+      // Keep the latest value if there are multiple readings in the same bucket
+      grouped[key][item.sensor_name] = parseFloat(item.value.toFixed(1));
     });
     return Object.values(grouped).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   };
@@ -909,6 +916,7 @@ void loop() {
                         strokeWidth={2}
                         fillOpacity={1} 
                         fill="url(#colorTemp)" 
+                        connectNulls={true}
                       />
                     )}
                     {/* PM2.5 ZH06 */}
@@ -922,6 +930,7 @@ void loop() {
                         strokeWidth={2}
                         fillOpacity={1} 
                         fill="url(#colorPM25)" 
+                        connectNulls={true}
                       />
                     )}
                     {/* PM10 ZH06 */}
@@ -935,6 +944,7 @@ void loop() {
                         strokeWidth={2}
                         fillOpacity={1} 
                         fill="url(#colorPM10)" 
+                        connectNulls={true}
                       />
                     )}
                     {/* PM1.0 ZH06 como línea */}
@@ -947,6 +957,7 @@ void loop() {
                         stroke="#E040FB" 
                         strokeWidth={2}
                         dot={false}
+                        connectNulls={true}
                       />
                     )}
                   </AreaChart>
