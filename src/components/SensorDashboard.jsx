@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles } from 'lucide-react';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles, Bell, BellOff, TrendingUp } from 'lucide-react';
 
 // Datos descriptivos para los tooltips informativos de calidad de aire
 const PM_INFO_DATA = {
@@ -35,6 +35,21 @@ export default function SensorDashboard() {
   const [copiedText, setCopiedText] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const isMounted = useRef(true);
+  const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'analytics'
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ruperta-air-notifications') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [notificationPermission, setNotificationPermission] = useState('default');
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
 
   const serverUrl = `http://${window.location.hostname}:3001/api/sensors/data`;
 
@@ -334,6 +349,182 @@ export default function SensorDashboard() {
     return '#FF1744'; // Hot
   };
 
+  const getAirQualityStatesDistribution = (data) => {
+    let limpio = 0;
+    let cocina = 0;
+    let transito = 0;
+    let polvo = 0;
+    let humo = 0;
+    let normal = 0;
+
+    data.forEach(bucket => {
+      const pm25 = bucket.zh06_pm25;
+      const pm10 = bucket.zh06_pm10;
+      const pm1 = bucket.zh06_pm1;
+
+      if (pm25 === undefined || pm10 === undefined || pm1 === undefined) return;
+
+      const r_uf = pm10 > 0 ? (pm1 / pm10) : 0;
+      const r_fg = pm10 > 0 ? (pm25 / pm10) : 0;
+
+      if (pm25 <= 12) {
+        limpio++;
+      } else if (pm10 >= 250 && pm25 >= 200 && (pm10 - pm25) >= 30) {
+        cocina++;
+      } else if (r_uf >= 0.70 && pm25 > 25) {
+        transito++;
+      } else if (r_fg < 0.45 && pm10 > 50) {
+        polvo++;
+      } else if (pm25 > 25) {
+        humo++;
+      } else {
+        normal++;
+      }
+    });
+
+    const total = limpio + cocina + transito + polvo + humo + normal;
+    if (total === 0) return [];
+
+    return [
+      { name: 'Aire Limpio', value: limpio, color: '#00E676', pct: ((limpio / total) * 100).toFixed(1) },
+      { name: 'Cocina / Fritura', value: cocina, color: '#FF6D00', pct: ((cocina / total) * 100).toFixed(1) },
+      { name: 'Tránsito / Diésel', value: transito, color: '#FF1744', pct: ((transito / total) * 100).toFixed(1) },
+      { name: 'Polvo de Calle', value: polvo, color: '#FFD600', pct: ((polvo / total) * 100).toFixed(1) },
+      { name: 'Humo / Ventilación Def.', value: humo, color: '#FF5722', pct: ((humo / total) * 100).toFixed(1) },
+      { name: 'Normal / Aceptable', value: normal, color: '#4FACFE', pct: ((normal / total) * 100).toFixed(1) }
+    ].filter(item => item.value > 0);
+  };
+
+  const getHourlyAveragePM = (data) => {
+    const hourlyData = Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      label: `${String(i).padStart(2, '0')}:00`,
+      totalPM25: 0,
+      count: 0
+    }));
+
+    data.forEach(bucket => {
+      const pm25 = bucket.zh06_pm25;
+      const timestamp = bucket.timestamp;
+      if (pm25 === undefined || !timestamp) return;
+
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return;
+      const hour = date.getHours();
+      hourlyData[hour].totalPM25 += pm25;
+      hourlyData[hour].count += 1;
+    });
+
+    return hourlyData.map(h => ({
+      label: h.label,
+      'Promedio PM2.5': h.count > 0 ? parseFloat((h.totalPM25 / h.count).toFixed(1)) : 0
+    }));
+  };
+
+  const getAdvancedStats = (data) => {
+    let maxPM25 = 0;
+    let sumPM25 = 0;
+    let countPM25 = 0;
+    let cleanCount = 0;
+    let totalCount = 0;
+
+    data.forEach(bucket => {
+      const pm25 = bucket.zh06_pm25;
+      if (pm25 !== undefined) {
+        if (pm25 > maxPM25) maxPM25 = pm25;
+        sumPM25 += pm25;
+        countPM25++;
+
+        if (pm25 <= 12) {
+          cleanCount++;
+        }
+        totalCount++;
+      }
+    });
+
+    const avgPM25 = countPM25 > 0 ? (sumPM25 / countPM25).toFixed(1) : 'N/A';
+    const cleanPct = totalCount > 0 ? ((cleanCount / totalCount) * 100).toFixed(0) : '0';
+
+    return { maxPM25, avgPM25, cleanPct };
+  };
+
+  const getAlertInfo = () => {
+    const pm25History = history
+      .filter(item => item.sensor_name === 'zh06_pm25')
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(-3);
+
+    if (pm25History.length < 3) return null;
+
+    const allHigh = pm25History.every(h => h.value > 25);
+    if (!allHigh) return null;
+
+    const diag = getAirQualityDiagnosis();
+    
+    return {
+      active: true,
+      pm25: pm25Sensor?.value || pm25History[pm25History.length - 1].value,
+      status: diag.status,
+      desc: diag.desc,
+      color: diag.color || 'var(--color-warning)'
+    };
+  };
+
+  const toggleNotifications = async () => {
+    if (!('Notification' in window)) {
+      alert('Tu navegador no soporta notificaciones de escritorio.');
+      return;
+    }
+
+    if (Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        setNotificationsEnabled(true);
+        localStorage.setItem('ruperta-air-notifications', 'true');
+        try {
+          new Notification('Ruperta Monitor', { body: '¡Notificaciones activadas con éxito!' });
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        setNotificationsEnabled(false);
+        localStorage.setItem('ruperta-air-notifications', 'false');
+      }
+    } else if (Notification.permission === 'denied') {
+      alert('Las notificaciones están bloqueadas en tu navegador. Por favor, habilítalas en la configuración del sitio.');
+    } else {
+      const nextState = !notificationsEnabled;
+      setNotificationsEnabled(nextState);
+      localStorage.setItem('ruperta-air-notifications', String(nextState));
+    }
+  };
+
+  const prevAlertActiveRef = useRef(false);
+  const prevAlertStatusRef = useRef('');
+
+  useEffect(() => {
+    const alertInfo = getAlertInfo();
+    const isCurrentlyActive = !!alertInfo;
+    const currentStatus = alertInfo?.status || '';
+
+    if (isCurrentlyActive && (!prevAlertActiveRef.current || prevAlertStatusRef.current !== currentStatus)) {
+      if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('Alerta de Calidad del Aire (Ruperta)', {
+            body: `Calidad del aire: ${currentStatus}. ${alertInfo.desc || 'Se recomienda ventilar el ambiente.'}`,
+            icon: '/favicon.ico'
+          });
+        } catch (e) {
+          console.error('Error sending desktop notification:', e);
+        }
+      }
+    }
+
+    prevAlertActiveRef.current = isCurrentlyActive;
+    prevAlertStatusRef.current = currentStatus;
+  }, [history, sensors, notificationsEnabled]);
+
   const tempSensor = getLatestSensor('temperature');
   const pm25Sensor = sensors.find(s => s.sensor_name === 'zh06_pm25');
   const pm10Sensor = sensors.find(s => s.sensor_name === 'zh06_pm10');
@@ -341,6 +532,10 @@ export default function SensorDashboard() {
 
   const chartData = getChartData();
   const hasData = sensors.length > 0;
+  const alertInfo = getAlertInfo();
+  const airStats = getAdvancedStats(chartData);
+  const pieData = getAirQualityStatesDistribution(chartData);
+  const barData = getHourlyAveragePM(chartData);
 
   // C++ ESP32 Firmware template
   const esp32Code = `// --- Ruperta Monitor ESP32 Firmware Template ---
@@ -476,6 +671,32 @@ void loop() {
           </button>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          {'Notification' in window && (
+            <button 
+              className="header-update-btn" 
+              onClick={toggleNotifications}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                background: notificationsEnabled && notificationPermission === 'granted' 
+                  ? 'rgba(0, 230, 118, 0.1)' 
+                  : 'rgba(255,255,255,0.05)',
+                border: notificationsEnabled && notificationPermission === 'granted'
+                  ? '1px solid rgba(0, 230, 118, 0.3)'
+                  : '1px solid var(--border-color)',
+                color: notificationsEnabled && notificationPermission === 'granted' ? '#00E676' : '#fff',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                transition: 'all 0.2s'
+              }}
+              title="Notificaciones de Calidad del Aire en Escritorio"
+            >
+              {notificationsEnabled && notificationPermission === 'granted' ? <Bell size={14} /> : <BellOff size={14} />}
+              <span>{notificationsEnabled && notificationPermission === 'granted' ? 'Alertas ON' : 'Alertas OFF'}</span>
+            </button>
+          )}
           <button 
             className="header-update-btn" 
             onClick={() => loadAllData()}
@@ -505,6 +726,81 @@ void loop() {
           </button>
         </div>
       </div>
+
+      {/* Alert Banner */}
+      {alertInfo && (
+        <div style={{
+          background: 'rgba(255, 23, 68, 0.08)',
+          border: '1px solid rgba(255, 23, 68, 0.2)',
+          borderLeft: '5px solid #FF1744',
+          borderRadius: '10px',
+          padding: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          animation: 'fadeIn 0.3s ease',
+          marginBottom: '8px'
+        }}>
+          <div style={{
+            background: 'rgba(255, 23, 68, 0.12)',
+            color: '#FF1744',
+            padding: '10px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <ShieldAlert size={22} />
+          </div>
+          <div style={{ flexGrow: 1 }}>
+            <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#FF1744' }}>
+              Alerta: Acumulación de Partículas Detectada ({alertInfo.status})
+            </h4>
+            <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              Los niveles de PM2.5 han superado los 25 µg/m³ de forma continua durante los últimos 15 minutos (Nivel actual: {alertInfo.pm25.toFixed(0)} µg/m³). {alertInfo.desc} Se aconseja abrir ventanas para ventilar el espacio.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-tab Navigation */}
+      {hasData && (
+        <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '0px', marginBottom: '8px' }}>
+          <button
+            onClick={() => setActiveSubTab('overview')}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: activeSubTab === 'overview' ? '2px solid var(--color-primary)' : '2px solid transparent',
+              color: activeSubTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              padding: '8px 16px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              transition: 'all 0.2s'
+            }}
+          >
+            Vista General
+          </button>
+          <button
+            onClick={() => setActiveSubTab('analytics')}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: activeSubTab === 'analytics' ? '2px solid var(--color-primary)' : '2px solid transparent',
+              color: activeSubTab === 'analytics' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              padding: '8px 16px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              transition: 'all 0.2s'
+            }}
+          >
+            Analíticas Avanzadas
+          </button>
+        </div>
+      )}
 
       {/* ESP32 Setup Guide / Code Template Panel */}
       {showInstructions && (
@@ -575,7 +871,7 @@ void loop() {
       )}
 
       {/* Main Dashboard Cards (DHT, BMP, Air Quality) */}
-      {hasData && (
+      {hasData && activeSubTab === 'overview' && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
             
@@ -977,6 +1273,144 @@ void loop() {
             )}
           </div>
         </>
+      )}
+
+      {/* Advanced Analytics Panel */}
+      {hasData && activeSubTab === 'analytics' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.3s ease' }}>
+          
+          {/* KPI Cards Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            
+            {/* Promedio PM2.5 */}
+            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ background: 'rgba(79, 172, 254, 0.08)', color: '#4FACFE', padding: '12px', borderRadius: '12px' }}>
+                <Activity size={24} />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Promedio PM2.5</span>
+                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                  {airStats.avgPM25} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
+                </strong>
+              </div>
+            </div>
+
+            {/* Máximo PM2.5 */}
+            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ background: 'rgba(255, 23, 68, 0.08)', color: '#FF1744', padding: '12px', borderRadius: '12px' }}>
+                <TrendingUp size={24} />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Máximo PM2.5</span>
+                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                  {airStats.maxPM25.toFixed(0)} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
+                </strong>
+              </div>
+            </div>
+
+            {/* Aire Limpio Pct */}
+            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ background: 'rgba(0, 230, 118, 0.08)', color: '#00E676', padding: '12px', borderRadius: '12px' }}>
+                <CheckCircle size={24} />
+              </div>
+              <div>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Tiempo Aire Limpio</span>
+                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#00E676', fontFamily: 'var(--font-display)' }}>
+                  {airStats.cleanPct}%
+                </strong>
+              </div>
+            </div>
+            
+          </div>
+
+          {/* Charts Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
+            
+            {/* Pie Chart: Air Quality States Distribution */}
+            <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Distribución de Estados de Aire</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Proporción de tiempo expuesto a cada diagnóstico en el rango seleccionado.</p>
+              </div>
+
+              {pieData.length === 0 ? (
+                <div style={{ height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  No hay suficientes datos de partículas para el desglose.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-around', gap: '16px', minHeight: '240px' }}>
+                  <div style={{ width: '160px', height: '160px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={70}
+                          paddingAngle={4}
+                          dataKey="value"
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ background: '#101524', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.75rem' }} 
+                          formatter={(value, name, props) => [`${props.payload.pct}% (${value} registros)`, name]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '150px' }}>
+                    {pieData.map((entry, index) => (
+                      <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: entry.color, flexShrink: 0 }} />
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{entry.name}:</span>
+                        <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{entry.pct}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bar Chart: Hourly Pattern */}
+            <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Patrón Horario de PM2.5</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Promedio del nivel de partículas finas según la hora del día.</p>
+              </div>
+
+              <div style={{ height: '240px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                    <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={9} tickLine={false} />
+                    <YAxis stroke="var(--text-muted)" fontSize={9} tickLine={false} />
+                    <Tooltip 
+                      contentStyle={{ background: '#101524', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.75rem' }} 
+                      itemStyle={{ color: '#00F2FE' }}
+                    />
+                    <Bar dataKey="Promedio PM2.5" fill="#4FACFE" radius={[4, 4, 0, 0]}>
+                      {barData.map((entry, index) => {
+                        const val = entry['Promedio PM2.5'];
+                        let barColor = '#00E676';
+                        if (val > 12 && val <= 35) barColor = '#4FACFE';
+                        if (val > 35 && val <= 55) barColor = 'var(--color-warning)';
+                        if (val > 55) barColor = '#FF1744';
+                        return <Cell key={`cell-${index}`} fill={barColor} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            
+          </div>
+          
+        </div>
       )}
 
       {/* Modal de información de calidad del aire */}
