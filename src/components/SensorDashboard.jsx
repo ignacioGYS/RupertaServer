@@ -109,10 +109,19 @@ export default function SensorDashboard() {
   };
 
   // Dynamic feedback and color palettes for cards
-  const getAirQualityStatus = (value) => {
-    if (value <= 50) return { label: 'Excelente', color: 'var(--color-success)', desc: 'Calidad de aire óptima.' };
-    if (value <= 100) return { label: 'Moderada', color: 'var(--color-warning)', desc: 'Aceptable, pero con algo de polución.' };
-    return { label: 'Pobre', color: 'var(--color-danger)', desc: 'Calidad de aire insalubre o alta concentración de gases.' };
+  // PM2.5 thresholds based on WHO Air Quality Guidelines
+  const getPM25Status = (value) => {
+    if (value <= 12) return { label: 'Excelente', color: 'var(--color-success)', desc: 'Aire limpio, sin riesgo.' };
+    if (value <= 35) return { label: 'Buena', color: '#4FACFE', desc: 'Calidad aceptable para la mayoría.' };
+    if (value <= 55) return { label: 'Moderada', color: 'var(--color-warning)', desc: 'Sensibles podrían notar efectos.' };
+    if (value <= 150) return { label: 'Mala', color: '#FF6D00', desc: 'Todos podrían notar efectos en la salud.' };
+    return { label: 'Peligrosa', color: 'var(--color-danger)', desc: 'Alerta sanitaria: riesgo para todos.' };
+  };
+
+  const getPM10Status = (value) => {
+    if (value <= 54) return { label: 'Buena', color: 'var(--color-success)' };
+    if (value <= 154) return { label: 'Moderada', color: 'var(--color-warning)' };
+    return { label: 'Mala', color: 'var(--color-danger)' };
   };
 
   const getTempColor = (temp) => {
@@ -122,9 +131,9 @@ export default function SensorDashboard() {
   };
 
   const tempSensor = getLatestSensor('temperature');
-  const humiditySensor = getLatestSensor('humidity');
-  const pressureSensor = getLatestSensor('pressure');
-  const co2Sensor = getLatestSensor('air_quality');
+  const pm25Sensor = sensors.find(s => s.sensor_name === 'zh06_pm25');
+  const pm10Sensor = sensors.find(s => s.sensor_name === 'zh06_pm10');
+  const pm1Sensor = sensors.find(s => s.sensor_name === 'zh06_pm1');
 
   const chartData = getChartData();
   const hasData = sensors.length > 0;
@@ -403,126 +412,100 @@ void loop() {
               )}
             </div>
 
-            {/* Humidity Card */}
+            {/* PM2.5 Card (Índice Principal de Calidad de Aire) */}
             <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
-                <Droplets size={100} style={{ color: '#4FACFE' }} />
+                <Wind size={100} style={{ color: pm25Sensor && isSensorActive(pm25Sensor) ? getPM25Status(pm25Sensor.value).color : '#fff' }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Humedad Relativa</span>
-                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>
-                  {humiditySensor ? humiditySensor.sensor_name.replace('_hum', '').toUpperCase() : 'N/A'}
-                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM2.5 (Partículas Finas)</span>
+                <span className="network-speed-badge-rx" style={{ background: 'rgba(255, 109, 0, 0.08)', color: '#FF6D00', border: '1px solid rgba(255, 109, 0, 0.2)' }}>ZH06</span>
               </div>
-              {humiditySensor && isSensorActive(humiditySensor) ? (
+              {pm25Sensor && isSensorActive(pm25Sensor) ? (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--color-secondary)' }}>
-                      {humiditySensor.value.toFixed(1)}
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getPM25Status(pm25Sensor.value).color }}>
+                      {pm25Sensor.value.toFixed(0)}
                     </span>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{humiditySensor.unit || '%'}</span>
-                  </div>
-                  {/* Visual gauge representation */}
-                  <div style={{ background: 'rgba(255,255,255,0.05)', width: '100%', height: '4px', borderRadius: '2px', marginTop: '8px' }}>
-                    <div style={{ background: 'var(--color-secondary)', width: `${Math.min(100, Math.max(0, humiditySensor.value))}%`, height: '100%', borderRadius: '2px' }} />
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Actualizado: {new Date(humiditySensor.timestamp).toLocaleTimeString()}
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
-                      ---
-                    </span>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.05)', width: '100%', height: '4px', borderRadius: '2px', marginTop: '8px' }} />
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
-                    No se está midiendo
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Atmospheric Pressure Card */}
-            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
-                <Gauge size={100} style={{ color: 'var(--color-primary)' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Presión Atmosférica</span>
-                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
-                  {pressureSensor ? pressureSensor.sensor_name.replace('_press', '').toUpperCase() : 'N/A'}
-                </span>
-              </div>
-              {pressureSensor && isSensorActive(pressureSensor) ? (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-                      {pressureSensor.value.toFixed(1)}
-                    </span>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{pressureSensor.unit || 'hPa'}</span>
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Actualizado: {new Date(pressureSensor.timestamp).toLocaleTimeString()}
-                  </p>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
-                      ---
-                    </span>
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
-                    No se está midiendo
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Air Quality Card */}
-            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
-                <Wind size={100} style={{ color: co2Sensor ? getAirQualityStatus(co2Sensor.value).color : '#fff' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Calidad del Aire</span>
-                <span className="network-speed-badge-rx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: 'var(--color-success)', border: '1px solid rgba(0, 230, 118, 0.2)' }}>
-                  {co2Sensor ? co2Sensor.sensor_name.replace('_co2', '').toUpperCase() : 'N/A'}
-                </span>
-              </div>
-              {co2Sensor && isSensorActive(co2Sensor) ? (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ 
-                      fontSize: '2.5rem', 
-                      fontWeight: 800, 
-                      fontFamily: 'var(--font-display)', 
-                      color: getAirQualityStatus(co2Sensor.value).color 
-                    }}>
-                      {co2Sensor.value.toFixed(0)}
-                    </span>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{co2Sensor.unit || 'PPM'}</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px' }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getAirQualityStatus(co2Sensor.value).color }}>
-                      {getAirQualityStatus(co2Sensor.value).label}
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getPM25Status(pm25Sensor.value).color }}>
+                      {getPM25Status(pm25Sensor.value).label}
                     </span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>— {getAirQualityStatus(co2Sensor.value).desc}</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>— {getPM25Status(pm25Sensor.value).desc}</span>
                   </div>
                 </div>
               ) : (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>
-                      ---
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>Esperando primera lectura del ZH06...</p>
+                </div>
+              )}
+            </div>
+
+            {/* PM10 Card */}
+            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
+                <Gauge size={100} style={{ color: pm10Sensor && isSensorActive(pm10Sensor) ? getPM10Status(pm10Sensor.value).color : '#fff' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM10 (Partículas Gruesas)</span>
+                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>ZH06</span>
+              </div>
+              {pm10Sensor && isSensorActive(pm10Sensor) ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getPM10Status(pm10Sensor.value).color }}>
+                      {pm10Sensor.value.toFixed(0)}
+                    </span>
+                    <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getPM10Status(pm10Sensor.value).color }}>
+                      {getPM10Status(pm10Sensor.value).label}
                     </span>
                   </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
-                    No se está midiendo
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>Esperando primera lectura del ZH06...</p>
+                </div>
+              )}
+            </div>
+
+            {/* PM1.0 Card */}
+            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
+                <Droplets size={100} style={{ color: '#E040FB' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM1.0 (Ultrafinas)</span>
+                <span className="network-speed-badge-rx" style={{ background: 'rgba(224, 64, 251, 0.08)', color: '#E040FB', border: '1px solid rgba(224, 64, 251, 0.2)' }}>ZH06</span>
+              </div>
+              {pm1Sensor && isSensorActive(pm1Sensor) ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: '#E040FB' }}>
+                      {pm1Sensor.value.toFixed(0)}
+                    </span>
+                    <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Actualizado: {new Date(pm1Sensor.timestamp).toLocaleTimeString()}
                   </p>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>Esperando primera lectura del ZH06...</p>
                 </div>
               )}
             </div>
@@ -577,13 +560,13 @@ void loop() {
                         <stop offset="5%" stopColor="#FF1744" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#FF1744" stopOpacity={0}/>
                       </linearGradient>
-                      <linearGradient id="colorHum" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="colorPM25" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#FF6D00" stopOpacity={0.2}/>
+                        <stop offset="95%" stopColor="#FF6D00" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorPM10" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#4FACFE" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#4FACFE" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorAir" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#00E676" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#00E676" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
@@ -617,18 +600,7 @@ void loop() {
                       wrapperStyle={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}
                     />
                     
-                    {/* Render line for sensors if they exist in dataset */}
-                    {sensors.some(s => s.sensor_name === 'dht22_temp') && (
-                      <Area 
-                        name="Temperatura (°C)" 
-                        type="monotone" 
-                        dataKey="dht22_temp" 
-                        stroke="#FF1744" 
-                        strokeWidth={2}
-                        fillOpacity={1} 
-                        fill="url(#colorTemp)" 
-                      />
-                    )}
+                    {/* Temperatura DS18B20 */}
                     {sensors.some(s => s.sensor_name === 'ds18b20_temp') && (
                       <Area 
                         name="Temperatura (°C)" 
@@ -640,35 +612,37 @@ void loop() {
                         fill="url(#colorTemp)" 
                       />
                     )}
-                    {sensors.some(s => s.sensor_name === 'dht22_hum') && (
+                    {/* PM2.5 ZH06 */}
+                    {sensors.some(s => s.sensor_name === 'zh06_pm25') && (
                       <Area 
-                        name="Humedad (%)" 
+                        name="PM2.5 (µg/m³)" 
                         type="monotone" 
-                        dataKey="dht22_hum" 
+                        dataKey="zh06_pm25" 
+                        stroke="#FF6D00" 
+                        strokeWidth={2}
+                        fillOpacity={1} 
+                        fill="url(#colorPM25)" 
+                      />
+                    )}
+                    {/* PM10 ZH06 */}
+                    {sensors.some(s => s.sensor_name === 'zh06_pm10') && (
+                      <Area 
+                        name="PM10 (µg/m³)" 
+                        type="monotone" 
+                        dataKey="zh06_pm10" 
                         stroke="#4FACFE" 
                         strokeWidth={2}
                         fillOpacity={1} 
-                        fill="url(#colorHum)" 
+                        fill="url(#colorPM10)" 
                       />
                     )}
-                    {sensors.some(s => s.sensor_name === 'mq135_co2') && (
-                      <Area 
-                        name="Partículas MQ135 (PPM)" 
-                        type="monotone" 
-                        dataKey="mq135_co2" 
-                        stroke="#00E676" 
-                        strokeWidth={2}
-                        fillOpacity={1} 
-                        fill="url(#colorAir)" 
-                      />
-                    )}
-                    {/* BMP280 pressure can be plotted as a separate line */}
-                    {sensors.some(s => s.sensor_name === 'bmp280_press') && (
+                    {/* PM1.0 ZH06 como línea */}
+                    {sensors.some(s => s.sensor_name === 'zh06_pm1') && (
                       <Line 
-                        name="Presión (hPa)" 
+                        name="PM1.0 (µg/m³)" 
                         type="monotone" 
-                        dataKey="bmp280_press" 
-                        stroke="#FF9100" 
+                        dataKey="zh06_pm1" 
+                        stroke="#E040FB" 
                         strokeWidth={2}
                         dot={false}
                       />
