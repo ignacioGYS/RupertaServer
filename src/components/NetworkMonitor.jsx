@@ -144,7 +144,7 @@ export default function NetworkMonitor() {
     '24:b2:de': 'Espressif (Smart Devices)',
     '54:5a:a6': 'Espressif (Smart Devices)',
     'c0:49:ef': 'Espressif (Smart Devices)',
-    'e8:db:84': 'Espressif (Smart Devices)',
+    'e8:db:84': 'Espressif / Shelly (Smart Devices)',
     '78:e3:6d': 'Espressif (Smart Devices)',
     'bc:dd:c2': 'Espressif (Smart Devices)',
     'cc:db:a7': 'Espressif (Smart Devices)',
@@ -234,8 +234,8 @@ export default function NetworkMonitor() {
     // ── Roborock (Robot Vacuums) ──────────────────────────────────
     'c4:ac:59': 'Roborock (Robot Vacuum)',
     'f4:64:5d': 'Roborock (Robot Vacuum)',
-    '78:11:dc': 'Roborock (Robot Vacuum)',
     '50:ec:50': 'Roborock (Robot Vacuum)',
+
 
     // ── iRobot (Roomba) ───────────────────────────────────────────
     '80:91:33': 'iRobot (Roomba)',
@@ -249,7 +249,6 @@ export default function NetworkMonitor() {
 
     // ── Shelly (Smart Switches / Relays) ─────────────────────────
     'c4:5b:be': 'Shelly (Smart Relay)',
-    'e8:db:84': 'Shelly / Espressif',
     '34:94:54': 'Shelly (Smart Relay)',
     '30:c6:f7': 'Shelly (Smart Relay)',
 

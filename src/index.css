@@ -2945,3 +2945,163 @@ section:has(.fe-root) {
     gap: 16px;
   }
 }
+
+/* ── Header Update Button ───────────────────────────────────────────────────── */
+.header-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 242, 254, 0.06);
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  color: var(--color-primary);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.header-update-btn:hover {
+  background: rgba(0, 242, 254, 0.14);
+  border-color: rgba(0, 242, 254, 0.5);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.1);
+}
+
+/* ── Last Updated Indicator ─────────────────────────────────────────────────── */
+.header-version-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.header-version {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+.header-last-updated {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  transition: color 0.3s ease;
+}
+.header-last-updated.fresh {
+  color: var(--color-success);
+}
+
+/* ── Tab Transition Animation ───────────────────────────────────────────────── */
+@keyframes tabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.tab-view-enter {
+  animation: tabFadeIn 0.2s ease-out forwards;
+}
+
+/* ── Bottom Navigation (Mobile PWA) ─────────────────────────────────────────── */
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Ocultar sidebar en mobile */
+  .sidebar {
+    display: none;
+  }
+
+  /* El contenido ocupa todo el ancho */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 16px 12px;
+    padding-bottom: 80px; /* espacio para la bottom nav */
+  }
+
+  /* Header más compacto en mobile */
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .header-title h1 {
+    font-size: 1.3rem;
+  }
+  .header-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-version-block {
+    display: none;
+  }
+
+  /* Mostrar bottom nav */
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(8, 11, 17, 0.97);
+    border-top: 1px solid var(--border-color);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 6px 4px env(safe-area-inset-bottom, 6px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .bottom-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 0.6rem;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    min-width: 54px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .bottom-nav-item svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.2s ease;
+  }
+  .bottom-nav-item:hover {
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.04);
+  }
+  .bottom-nav-item.active {
+    color: var(--color-primary);
+    background: rgba(0, 242, 254, 0.08);
+  }
+  .bottom-nav-item.active svg {
+    transform: scale(1.15);
+  }
+  .bottom-nav-item .bn-label {
+    line-height: 1;
+    text-align: center;
+  }
+}
+
