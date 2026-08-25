@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Cpu, HardDrive, Network, Layers, Clock, ShieldCheck, Activity, Thermometer } from 'lucide-react';
+import { Cpu, HardDrive, Network, Layers, Clock, ShieldCheck, Activity, Thermometer, Zap } from 'lucide-react';
 import { formatBytes, formatNetworkSpeed, formatUptime, formatPercent } from '../utils/formatters';
 
 export default function Dashboard() {
@@ -48,6 +48,7 @@ export default function Dashboard() {
           const newPoint = {
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             cpu: data.cpu,
+            power: data.cpuPower || 0,
             rx: Math.round(data.network.rx / 1024), // in KB/s
             tx: Math.round(data.network.tx / 1024)  // in KB/s
           };
@@ -114,12 +115,20 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div className="metric-card-value">{formatPercent(metrics.cpu)}</div>
-            {metrics.cpuTemp !== undefined && metrics.cpuTemp !== null && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: metrics.cpuTemp > 75 ? 'var(--color-danger)' : metrics.cpuTemp > 55 ? 'var(--color-warning)' : 'var(--color-success)' }} title="Temperatura de CPU">
-                <Thermometer size={14} />
-                <span>{metrics.cpuTemp}°C</span>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {metrics.cpuPower !== undefined && metrics.cpuPower !== null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#FFD700' }} title="Consumo eléctrico CPU (RAPL)">
+                  <Zap size={14} />
+                  <span>{metrics.cpuPower} W</span>
+                </div>
+              )}
+              {metrics.cpuTemp !== undefined && metrics.cpuTemp !== null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: metrics.cpuTemp > 75 ? 'var(--color-danger)' : metrics.cpuTemp > 55 ? 'var(--color-warning)' : 'var(--color-success)' }} title="Temperatura de CPU">
+                  <Thermometer size={14} />
+                  <span>{metrics.cpuTemp}°C</span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="progress-bar-container">
             <div 
@@ -127,7 +136,9 @@ export default function Dashboard() {
               style={{ width: `${metrics.cpu}%` }}
             ></div>
           </div>
-          <span className="metric-card-subtext">Carga promedio del sistema</span>
+          <span className="metric-card-subtext">
+            Carga promedio del sistema {metrics.cpuPower ? `• ${metrics.cpuPower} Watts` : ''}
+          </span>
         </div>
 
         {/* Memory Card */}

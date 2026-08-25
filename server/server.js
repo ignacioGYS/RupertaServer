@@ -45,10 +45,11 @@ function isValidContainerName(name) {
   return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name);
 }
 
-// In-memory cache for delta calculations (CPU and Network)
+// In-memory cache for delta calculations (CPU, Network and Power)
 const lastMetricsCache = {
   cpu: null,
-  net: null
+  net: null,
+  power: null
 };
 
 // System Info Cache
@@ -98,8 +99,8 @@ app.get('/api/system-info', async (req, res) => {
 // 3. Real-time Metrics API
 app.get('/api/metrics', async (req, res) => {
   try {
-    // Single SSH roundtrip execution to gather all metrics + temperatures (CPU & disks)
-    const command = `cat /proc/stat | head -n 1 && echo "===NET===" && cat /proc/net/dev && echo "===MEM===" && free -b && echo "===DF===" && df -x tmpfs -x devtmpfs -x overlay -x squashfs -x shm -P && echo "===UPTIME===" && cat /proc/uptime && echo "===TEMP===" && cpu_temp="" && for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`;
+    // Single SSH roundtrip execution to gather all metrics + temperatures (CPU & disks) + CPU power (RAPL)
+    const command = `cat /proc/stat | head -n 1 && echo "===NET===" && cat /proc/net/dev && echo "===MEM===" && free -b && echo "===DF===" && df -x tmpfs -x devtmpfs -x overlay -x squashfs -x shm -P && echo "===UPTIME===" && cat /proc/uptime && echo "===POWER===" && (cat /sys/class/powercap/intel-rapl:0/energy_uj 2>/dev/null || echo "0") && echo "===TEMP===" && cpu_temp="" && for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "k10temp" ] || [ "$name" = "coretemp" ]; then val=$(cat $h/temp1_input 2>/dev/null); if [ -n "$val" ]; then cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; fi; done; if [ -z "$cpu_temp" ]; then for t in /sys/class/hwmon/hwmon*/temp*_input; do if [ -f "$t" ] && [ "$(cat \${t%_input}_label 2>/dev/null)" = "Tctl" ]; then val=$(cat $t 2>/dev/null); cpu_temp=$(awk "BEGIN {print $val/1000}"); break; fi; done; fi; echo "cpu:$cpu_temp"; for h in /sys/class/hwmon/hwmon*; do name=$(cat $h/name 2>/dev/null); if [ "$name" = "drivetemp" ]; then block=$(ls $h/device/block 2>/dev/null); temp=$(cat $h/temp1_input 2>/dev/null); if [ -n "$block" ] && [ -n "$temp" ]; then val=$(awk "BEGIN {print $temp/1000}"); echo "disk:$block:$val"; fi; fi; done`;
     const output = await sshManager.exec(command);
     
     const parts = output.split(/===[A-Z]+===/);
@@ -174,11 +175,27 @@ app.get('/api/metrics', async (req, res) => {
       }
     }
 
-    // Parse Temperatures (parts[5] if present)
+    // Parse Power (parts[5] if present)
+    let cpuPower = null;
+    if (parts[5]) {
+      const energyUj = parseInt(parts[5].trim()) || 0;
+      if (energyUj > 0) {
+        if (lastMetricsCache.power) {
+          const diffEnergy = energyUj - lastMetricsCache.power.energy;
+          const diffTime = (now - lastMetricsCache.power.time) / 1000;
+          if (diffTime > 0 && diffEnergy >= 0) {
+            cpuPower = Math.round((diffEnergy / diffTime / 1000000) * 10) / 10;
+          }
+        }
+        lastMetricsCache.power = { energy: energyUj, time: now };
+      }
+    }
+
+    // Parse Temperatures (parts[6] if present)
     let cpuTemp = null;
     const diskTemps = {};
-    if (parts[5]) {
-      const tempLines = parts[5].trim().split('\n');
+    if (parts[6]) {
+      const tempLines = parts[6].trim().split('\n');
       for (const line of tempLines) {
         if (line.startsWith('cpu:')) {
           const val = parseFloat(line.split(':')[1]);
@@ -223,6 +240,7 @@ app.get('/api/metrics', async (req, res) => {
     res.json({
       cpu: Math.round(Math.max(0, Math.min(100, cpuPercent)) * 10) / 10,
       cpuTemp,
+      cpuPower,
       network: {
         rx: Math.round(netRxSpeed),
         tx: Math.round(netTxSpeed)
