@@ -176,18 +176,26 @@ app.get('/api/metrics', async (req, res) => {
     }
 
     // Parse Power (parts[5] if present)
-    let cpuPower = null;
+    let cpuPower = lastMetricsCache.power?.watts ?? null;
     if (parts[5]) {
       const energyUj = parseInt(parts[5].trim()) || 0;
       if (energyUj > 0) {
-        if (lastMetricsCache.power) {
+        if (lastMetricsCache.power && lastMetricsCache.power.energy > 0) {
           const diffEnergy = energyUj - lastMetricsCache.power.energy;
           const diffTime = (now - lastMetricsCache.power.time) / 1000;
           if (diffTime > 0 && diffEnergy >= 0) {
-            cpuPower = Math.round((diffEnergy / diffTime / 1000000) * 10) / 10;
+            const calculatedWatts = Math.round((diffEnergy / diffTime / 1000000) * 10) / 10;
+            // Sanity check for realistic APU power consumption (0.1W to 250W)
+            if (calculatedWatts >= 0 && calculatedWatts <= 250) {
+              cpuPower = calculatedWatts;
+            }
           }
         }
-        lastMetricsCache.power = { energy: energyUj, time: now };
+        lastMetricsCache.power = {
+          energy: energyUj,
+          time: now,
+          watts: cpuPower
+        };
       }
     }
 

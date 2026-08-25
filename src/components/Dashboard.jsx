@@ -116,12 +116,10 @@ export default function Dashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div className="metric-card-value">{formatPercent(metrics.cpu)}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {metrics.cpuPower !== undefined && metrics.cpuPower !== null && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#FFD700' }} title="Consumo eléctrico CPU (RAPL)">
-                  <Zap size={14} />
-                  <span>{metrics.cpuPower} W</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: '#FFD700' }} title="Consumo eléctrico CPU (RAPL)">
+                <Zap size={14} />
+                <span>{metrics.cpuPower !== undefined && metrics.cpuPower !== null ? `${metrics.cpuPower} W` : '-- W'}</span>
+              </div>
               {metrics.cpuTemp !== undefined && metrics.cpuTemp !== null && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.9rem', fontWeight: 600, color: metrics.cpuTemp > 75 ? 'var(--color-danger)' : metrics.cpuTemp > 55 ? 'var(--color-warning)' : 'var(--color-success)' }} title="Temperatura de CPU">
                   <Thermometer size={14} />
