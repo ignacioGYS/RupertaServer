@@ -984,7 +984,7 @@ void loop() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Temperatura</span>
                 <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
-                  {tempSensor ? tempSensor.sensor_name.replace('_temp', '').toUpperCase() : 'N/A'}
+                  {tempSensor ? (tempSensor.sensor_name.includes('ds18b20') ? 'T° INTERIOR' : tempSensor.sensor_name.replace('_temp', '').toUpperCase()) : 'N/A'}
                 </span>
               </div>
               {tempSensor && isSensorActive(tempSensor) ? (

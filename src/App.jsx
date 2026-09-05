@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, Thermometer, Server as HardwareIcon, Bell, BellOff } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -12,6 +12,7 @@ import NetworkMonitor from './components/NetworkMonitor';
 import Lights from './components/Lights';
 import SensorDashboard from './components/SensorDashboard';
 import SidebarWeatherWidget from './components/SidebarWeatherWidget';
+import Weather from './components/Weather';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -223,7 +224,6 @@ function UpdateModal({ onClose, onConfirm, status, message }) {
 // â”€â”€ App principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [tabKey, setTabKey] = useState(0); // fuerza re-animaciÃ³n al cambiar tab
   const [isConnected, setIsConnected] = useState(false);
   const [mountedTabs, setMountedTabs] = useState(new Set(['dashboard']));
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
@@ -323,7 +323,6 @@ function App() {
   const handleTabChange = (id) => {
     if (id === activeTab) return;
     setActiveTab(id);
-    setTabKey(k => k + 1);
     if (!mountedTabs.has(id)) {
       setMountedTabs(new Set([...mountedTabs, id]));
     }
@@ -338,6 +337,7 @@ function App() {
     { id: 'network',    label: 'Red',                 shortLabel: 'Red',        icon: <Network /> },
     { id: 'lights',     label: 'Luces',               shortLabel: 'Luces',      icon: <Lightbulb /> },
     { id: 'sensors',    label: 'Sensores IoT',        shortLabel: 'Sensores',   icon: <Thermometer /> },
+    { id: 'weather',    label: 'Clima',               shortLabel: 'Clima',      icon: <CloudSun /> },
     { id: 'files',      label: 'Archivos (SFTP)',      shortLabel: 'Archivos',   icon: <Folder /> },
     { id: 'terminal',   label: 'Terminal SSH',        shortLabel: 'Terminal',   icon: <TermIcon /> },
   ];
@@ -351,21 +351,23 @@ function App() {
     network:    <NetworkMonitor />,
     lights:     <Lights />,
     sensors:    <SensorDashboard />,
+    weather:    <Weather />,
     files:      <FileExplorer />,
     terminal:   <Terminal />,
   };
 
   const viewMeta = {
     dashboard:  { title: 'Panel de Control',       subtitle: 'Resumen de rendimiento y estado del sistema en tiempo real' },
-    docker:     { title: 'Contenedores Docker',    subtitle: 'Monitoreo y administraciÃ³n de servicios dockerizados' },
-    processes:  { title: 'Procesos Activos',       subtitle: 'AdministraciÃ³n de tareas y carga en segundo plano' },
-    hardware:   { title: 'Hardware del Servidor',  subtitle: 'DetecciÃ³n de GPU, CPU, RAM, placa base, discos y mÃ¡s' },
+    docker:     { title: 'Contenedores Docker',    subtitle: 'Monitoreo y administración de servicios dockerizados' },
+    processes:  { title: 'Procesos Activos',       subtitle: 'Administración de tareas y carga en segundo plano' },
+    hardware:   { title: 'Hardware del Servidor',  subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' },
     gpu:        { title: 'Monitoreo de GPU',       subtitle: 'Rendimiento en tiempo real de GPU y consola nvtop' },
     network:    { title: 'Red y Conexiones',       subtitle: 'Dispositivos en la red local y conexiones activas' },
     lights:     { title: 'Luces',                  subtitle: 'Control de luces inteligentes WiZ en la red local' },
-    sensors:    { title: 'Sensores IoT (ESP32)',   subtitle: 'Temperatura, humedad, presiÃ³n y calidad del aire en tiempo real' },
-    files:      { title: 'Explorador de Archivos', subtitle: 'GestiÃ³n y ediciÃ³n de archivos remotos vÃ­a SFTP' },
-    terminal:   { title: 'Terminal SSH',           subtitle: 'LÃ­nea de comandos remota segura' },
+    sensors:    { title: 'Sensores IoT (ESP32)',   subtitle: 'Temperatura, humedad, presión y calidad del aire en tiempo real' },
+    weather:    { title: 'Clima Local',            subtitle: 'Pronóstico extendido del tiempo para tu servidor' },
+    files:      { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' },
+    terminal:   { title: 'Terminal SSH',           subtitle: 'Línea de comandos remota segura' },
   };
 
   const { title, subtitle } = viewMeta[activeTab] || viewMeta.dashboard;
@@ -501,7 +503,6 @@ function App() {
             >
               {mountedTabs.has(item.id) && (
                 <div
-                  key={`${item.id}-${tabKey}`}
                   className="tab-view-enter"
                   style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}
                 >
