@@ -349,6 +349,34 @@ export default function SensorDashboard() {
     return '#FF1744'; // Hot
   };
 
+  // Humedad relativa - Rangos de confort
+  const getHumidityStatus = (value) => {
+    if (value < 20) return { label: 'Muy Seco', color: '#FF6D00', desc: 'Aire extremadamente seco. Puede irritar piel y mucosas.' };
+    if (value < 30) return { label: 'Seco', color: '#FFD600', desc: 'Humedad baja. Considere usar humidificador.' };
+    if (value <= 60) return { label: 'Confortable', color: '#00E676', desc: 'Rango ideal de humedad relativa.' };
+    if (value <= 70) return { label: 'Húmedo', color: '#4FACFE', desc: 'Humedad ligeramente elevada.' };
+    return { label: 'Muy Húmedo', color: '#2979FF', desc: 'Riesgo de condensación y moho.' };
+  };
+
+  const getHumidityColor = (value) => {
+    if (value < 30) return '#FF6D00';
+    if (value <= 60) return '#00E676';
+    return '#2979FF';
+  };
+
+  // Presión atmosférica - Referencia nivel del mar (~1013.25 hPa)
+  const getPressureStatus = (value) => {
+    if (value < 1000) return { label: 'Baja', color: '#4FACFE', desc: 'Presión baja. Posible mal tiempo o tormenta.' };
+    if (value <= 1020) return { label: 'Normal', color: '#00E676', desc: 'Presión atmosférica estable y normal.' };
+    return { label: 'Alta', color: '#FFD600', desc: 'Presión alta. Tiempo estable y despejado.' };
+  };
+
+  const getPressureColor = (value) => {
+    if (value < 1000) return '#4FACFE';
+    if (value <= 1020) return '#00E676';
+    return '#FFD600';
+  };
+
   const getAirQualityStatesDistribution = (data) => {
     let limpio = 0;
     let cocina = 0;
@@ -471,12 +499,8 @@ export default function SensorDashboard() {
   };
 
   const toggleNotifications = async () => {
-    if (!('Notification' in window)) {
-      alert('Tu navegador no soporta notificaciones de escritorio.');
-      return;
-    }
-
-    if (Notification.permission === 'default') {
+    // If the browser supports native notifications and permission hasn't been asked yet
+    if ('Notification' in window && Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
       if (permission === 'granted') {
@@ -487,17 +511,16 @@ export default function SensorDashboard() {
         } catch (e) {
           console.error(e);
         }
-      } else {
-        setNotificationsEnabled(false);
-        localStorage.setItem('ruperta-air-notifications', 'false');
+        return;
       }
-    } else if (Notification.permission === 'denied') {
-      alert('Las notificaciones están bloqueadas en tu navegador. Por favor, habilítalas en la configuración del sitio.');
-    } else {
-      const nextState = !notificationsEnabled;
-      setNotificationsEnabled(nextState);
-      localStorage.setItem('ruperta-air-notifications', String(nextState));
+      // If denied after asking, fall through to toggle in-app alerts
     }
+
+    // For 'granted' permission: toggle on/off normally
+    // For 'denied' permission or no Notification API: toggle in-app alerts as fallback
+    const nextState = !notificationsEnabled;
+    setNotificationsEnabled(nextState);
+    localStorage.setItem('ruperta-air-notifications', String(nextState));
   };
 
   const prevAlertActiveRef = useRef(false);
@@ -509,14 +532,34 @@ export default function SensorDashboard() {
     const currentStatus = alertInfo?.status || '';
 
     if (isCurrentlyActive && (!prevAlertActiveRef.current || prevAlertStatusRef.current !== currentStatus)) {
-      if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
-        try {
-          new Notification('Alerta de Calidad del Aire (Ruperta)', {
-            body: `Calidad del aire: ${currentStatus}. ${alertInfo.desc || 'Se recomienda ventilar el ambiente.'}`,
-            icon: '/favicon.ico'
-          });
-        } catch (e) {
-          console.error('Error sending desktop notification:', e);
+      if (notificationsEnabled) {
+        // Try native desktop notification first
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('Alerta de Calidad del Aire (Ruperta)', {
+              body: `Calidad del aire: ${currentStatus}. ${alertInfo.desc || 'Se recomienda ventilar el ambiente.'}`,
+              icon: '/favicon.ico'
+            });
+          } catch (e) {
+            console.error('Error sending desktop notification:', e);
+          }
+        } else {
+          // Fallback: play a short beep sound for in-app alert
+          try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.value = 880;
+            oscillator.type = 'sine';
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.5);
+          } catch (e) {
+            console.error('Error playing alert sound:', e);
+          }
         }
       }
     }
@@ -526,6 +569,8 @@ export default function SensorDashboard() {
   }, [history, sensors, notificationsEnabled]);
 
   const tempSensor = getLatestSensor('temperature');
+  const humiditySensor = getLatestSensor('humidity');
+  const pressureSensor = getLatestSensor('pressure');
   const pm25Sensor = sensors.find(s => s.sensor_name === 'zh06_pm25');
   const pm10Sensor = sensors.find(s => s.sensor_name === 'zh06_pm10');
   const pm1Sensor = sensors.find(s => s.sensor_name === 'zh06_pm1');
@@ -671,32 +716,35 @@ void loop() {
           </button>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          {'Notification' in window && (
-            <button 
-              className="header-update-btn" 
-              onClick={toggleNotifications}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                background: notificationsEnabled && notificationPermission === 'granted' 
-                  ? 'rgba(0, 230, 118, 0.1)' 
-                  : 'rgba(255,255,255,0.05)',
-                border: notificationsEnabled && notificationPermission === 'granted'
-                  ? '1px solid rgba(0, 230, 118, 0.3)'
-                  : '1px solid var(--border-color)',
-                color: notificationsEnabled && notificationPermission === 'granted' ? '#00E676' : '#fff',
-                padding: '8px 14px',
-                borderRadius: '8px',
-                transition: 'all 0.2s'
-              }}
-              title="Notificaciones de Calidad del Aire en Escritorio"
-            >
-              {notificationsEnabled && notificationPermission === 'granted' ? <Bell size={14} /> : <BellOff size={14} />}
-              <span>{notificationsEnabled && notificationPermission === 'granted' ? 'Alertas ON' : 'Alertas OFF'}</span>
-            </button>
-          )}
+          <button 
+            className="header-update-btn" 
+            onClick={toggleNotifications}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              background: notificationsEnabled 
+                ? 'rgba(0, 230, 118, 0.1)' 
+                : 'rgba(255,255,255,0.05)',
+              border: notificationsEnabled
+                ? '1px solid rgba(0, 230, 118, 0.3)'
+                : '1px solid var(--border-color)',
+              color: notificationsEnabled ? '#00E676' : '#fff',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              transition: 'all 0.2s'
+            }}
+            title={notificationsEnabled 
+              ? (notificationPermission === 'granted' 
+                  ? 'Alertas de escritorio activadas' 
+                  : 'Alertas in-app activadas (notificaciones del navegador bloqueadas)')
+              : 'Activar alertas de calidad del aire'
+            }
+          >
+            {notificationsEnabled ? <Bell size={14} /> : <BellOff size={14} />}
+            <span>{notificationsEnabled ? 'Alertas ON' : 'Alertas OFF'}</span>
+          </button>
           <button 
             className="header-update-btn" 
             onClick={() => loadAllData()}
@@ -909,6 +957,82 @@ void loop() {
                   <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>
                     No se está midiendo
                   </p>
+                </div>
+              )}
+            </div>
+
+            {/* Humidity Card (BME280) */}
+            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
+                <Droplets size={100} style={{ color: humiditySensor ? getHumidityColor(humiditySensor.value) : '#fff' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Humedad Relativa</span>
+                <span className="network-speed-badge-tx" style={{ background: 'rgba(41, 121, 255, 0.08)', color: '#2979FF', border: '1px solid rgba(41, 121, 255, 0.2)' }}>BME280</span>
+              </div>
+              {humiditySensor && isSensorActive(humiditySensor) ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getHumidityColor(humiditySensor.value) }}>
+                      {humiditySensor.value.toFixed(1)}
+                    </span>
+                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{humiditySensor.unit || '%'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getHumidityStatus(humiditySensor.value).color }}>
+                      {getHumidityStatus(humiditySensor.value).label}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>— {getHumidityStatus(humiditySensor.value).desc}</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Actualizado: {new Date(humiditySensor.timestamp).toLocaleTimeString()}
+                  </p>
+                  {renderStatsGrid('bme280_hum', '%', 1)}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>No se está midiendo</p>
+                </div>
+              )}
+            </div>
+
+            {/* Pressure Card (BME280) */}
+            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
+                <Gauge size={100} style={{ color: pressureSensor ? getPressureColor(pressureSensor.value) : '#fff' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Presión Atmosférica</span>
+                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: '#00E676', border: '1px solid rgba(0, 230, 118, 0.2)' }}>BME280</span>
+              </div>
+              {pressureSensor && isSensorActive(pressureSensor) ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getPressureColor(pressureSensor.value) }}>
+                      {pressureSensor.value.toFixed(1)}
+                    </span>
+                    <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{pressureSensor.unit || 'hPa'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: getPressureStatus(pressureSensor.value).color }}>
+                      {getPressureStatus(pressureSensor.value).label}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>— {getPressureStatus(pressureSensor.value).desc}</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Actualizado: {new Date(pressureSensor.timestamp).toLocaleTimeString()}
+                  </p>
+                  {renderStatsGrid('bme280_press', ' hPa', 1)}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
+                  </div>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>No se está midiendo</p>
                 </div>
               )}
             </div>
@@ -1267,6 +1391,21 @@ void loop() {
                         connectNulls={true}
                       />
                     )}
+                    {/* Humedad BME280 como línea */}
+                    {sensors.some(s => s.sensor_name === 'bme280_hum') && (
+                      <Line 
+                        yAxisId="right"
+                        name="Humedad (%)" 
+                        type="monotone" 
+                        dataKey="bme280_hum" 
+                        stroke="#2979FF" 
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls={true}
+                        strokeDasharray="5 5"
+                      />
+                    )}
+                    {/* Presión BME280 como línea (oculta por defecto, escala diferente) */}
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

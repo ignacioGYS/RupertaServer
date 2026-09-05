@@ -2,6 +2,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP280.h>
+#include <Adafruit_AHTX0.h>
 
 // --- CONFIGURACIÓN DE HARDWARE ---
 #define USE_REAL_SENSORS 1
@@ -14,6 +18,13 @@
   OneWire oneWire(ONE_WIRE_BUS);
   DallasTemperature tempSensors(&oneWire);
 #endif
+
+// --- BMP280 + AHT20 (Humedad + Presión Atmosférica) ---
+// Conectado via I2C: GPIO 21 (SDA), GPIO 22 (SCL)
+Adafruit_BMP280 bmp;
+Adafruit_AHTX0 aht;
+bool bmpAvailable = false;
+bool ahtAvailable = false;
 
 // --- WINSEN ZH06 (Calidad de Aire PM1.0 / PM2.5 / PM10) ---
 // Conectado via Serial2: GPIO 16 (RX2 ← TXD amarillo), GPIO 17 (TX2 → RXD verde)
@@ -166,7 +177,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("--- Iniciando ESP32 Ruperta Node ---");
-  Serial.println("    Sensores: DS18B20 (Temp) + ZH06 (PM)");
+  Serial.println("    Sensores: DS18B20 (Temp) + BME280 (Hum/Press) + ZH06 (PM)");
   
   connectWiFi();
 
@@ -175,6 +186,29 @@ void setup() {
     Serial.println("Inicializando sensor DS18B20 (temperatura)...");
     tempSensors.begin();
   #endif
+
+  // Inicializar BMP280 via I2C (presión)
+  Serial.println("Inicializando sensor BMP280 (presión)...");
+  if (bmp.begin(0x76)) {
+    bmpAvailable = true;
+    Serial.println("[BMP280] Sensor detectado en dirección 0x76.");
+  } else if (bmp.begin(0x77)) {
+    bmpAvailable = true;
+    Serial.println("[BMP280] Sensor detectado en dirección 0x77.");
+  } else {
+    bmpAvailable = false;
+    Serial.println("[BMP280] ¡ERROR! No se detectó el sensor. Verificar conexiones.");
+  }
+
+  // Inicializar AHT20 via I2C (humedad)
+  Serial.println("Inicializando sensor AHT20 (humedad)...");
+  if (aht.begin()) {
+    ahtAvailable = true;
+    Serial.println("[AHT20] Sensor detectado (0x38).");
+  } else {
+    ahtAvailable = false;
+    Serial.println("[AHT20] ¡ERROR! No se detectó el sensor de humedad.");
+  }
 
   // Inicializar Serial2 para ZH06 (9600 baudios)
   Serial2.begin(9600, SERIAL_8N1, ZH06_RX, ZH06_TX);
@@ -202,7 +236,9 @@ void loop() {
   }
 
   // ============================================
-  // CICLO 1: DS18B20 - Temperatura cada 30 seg
+  // CICLO 1: Sensores periódicos cada 30 seg
+  //   - DS18B20: Temperatura
+  //   - BME280:  Humedad + Presión Atmosférica
   // ============================================
   if (now - lastSendTime >= sendInterval) {
     lastSendTime = now;
@@ -226,16 +262,57 @@ void loop() {
         temp = 22.0 + random(-20, 20) / 10.0;
       #endif
 
-      // Construir JSON solo con temperatura
-      StaticJsonDocument<256> doc;
+      // Construir JSON con temperatura + humedad + presión
+      StaticJsonDocument<512> doc;
       JsonArray readings = doc.to<JsonArray>();
 
-      // Sensor: Temperatura
+      // Sensor: Temperatura (DS18B20 — más preciso que BME280)
       JsonObject r1 = readings.createNestedObject();
       r1["sensor_name"] = "ds18b20_temp";
       r1["sensor_type"] = "temperature";
       r1["value"] = temp;
       r1["unit"] = "°C";
+
+      // Sensor: Humedad + Presión (BMP280 + AHT20 via I2C)
+      if (bmpAvailable || ahtAvailable) {
+        float humidity = NAN;
+        float pressure = NAN;
+        
+        if (bmpAvailable) {
+            pressure = bmp.readPressure() / 100.0F; // Pa → hPa
+        }
+        if (ahtAvailable) {
+            sensors_event_t humidityEvent, tempEvent;
+            aht.getEvent(&humidityEvent, &tempEvent);
+            humidity = humidityEvent.relative_humidity;
+        }
+
+        if (bmpAvailable && !isnan(pressure)) {
+          Serial.print("Lectura BMP280 — Presión: ");
+          Serial.print(pressure);
+          Serial.println(" hPa");
+
+          // Presión atmosférica
+          JsonObject rPress = readings.createNestedObject();
+          rPress["sensor_name"] = "bme280_press"; // Mantenemos mismo nombre para que Ruperta no pierda historia
+          rPress["sensor_type"] = "pressure";
+          rPress["value"] = pressure;
+          rPress["unit"] = "hPa";
+        }
+        
+        if (ahtAvailable && !isnan(humidity)) {
+          Serial.print("Lectura AHT20 — Humedad: ");
+          Serial.print(humidity);
+          Serial.println("%");
+
+          // Humedad relativa
+          JsonObject rHum = readings.createNestedObject();
+          rHum["sensor_name"] = "bme280_hum"; // Mantenemos mismo nombre para Ruperta
+          rHum["sensor_type"] = "humidity";
+          rHum["value"] = humidity;
+          rHum["unit"] = "%";
+        }
+      }
 
       String payload;
       serializeJson(doc, payload);
