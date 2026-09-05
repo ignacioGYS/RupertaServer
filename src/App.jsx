@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, Thermometer, Server as HardwareIcon, Bell, BellOff } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
@@ -11,6 +11,7 @@ import GpuMonitor from './components/GpuMonitor';
 import NetworkMonitor from './components/NetworkMonitor';
 import Lights from './components/Lights';
 import SensorDashboard from './components/SensorDashboard';
+import SidebarWeatherWidget from './components/SidebarWeatherWidget';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -432,6 +433,7 @@ function App() {
 
         <div className="sidebar-footer">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {!sidebarCollapsed && <SidebarWeatherWidget />}
             <span className="sidebar-footer-label">Estado del Servidor</span>
             <ConnectionStatus onConnectionChange={setIsConnected} />
           </div>
