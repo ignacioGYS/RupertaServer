@@ -51,7 +51,7 @@ export default function DailyInfo() {
       setDolares(filteredDolares);
 
       // Cripto
-      const resCrypto = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether&vs_currencies=usd');
+      const resCrypto = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,ergo&vs_currencies=usd');
       const dataCrypto = await resCrypto.json();
       setCrypto(dataCrypto);
 
@@ -178,6 +178,19 @@ export default function DailyInfo() {
                   </div>
                 </div>
                 <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>${crypto.tether.usd.toLocaleString('en-US', { minimumFractionDigits: 3 })}</span>
+              </div>
+            )}
+
+            {crypto.ergo && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', background: '#EF4B4B', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold' }}>Σ</div>
+                  <div>
+                    <span style={{ display: 'block', fontWeight: 700, fontSize: '0.95rem' }}>Ergo</span>
+                    <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>ERG</span>
+                  </div>
+                </div>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>${crypto.ergo.usd.toLocaleString('en-US', { minimumFractionDigits: 3 })}</span>
               </div>
             )}
           </div>
