@@ -60,6 +60,13 @@ export default function Weather() {
 
   useEffect(() => {
     fetchWeather(location.lat, location.lon);
+    
+    // Auto-refresh cada 10 minutos (600,000 ms)
+    const intervalId = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 10 * 60 * 1000);
+    
+    return () => clearInterval(intervalId);
   }, [location, refreshKey]);
 
   useEffect(() => {
@@ -262,66 +269,72 @@ export default function Weather() {
 
       <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
         {/* Clima Actual */}
-        <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
+        <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
           {/* Fondo sutil según clima */}
           <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '150%', height: '150%', background: isDay ? 'radial-gradient(circle, rgba(255,193,7,0.1) 0%, rgba(0,0,0,0) 70%)' : 'radial-gradient(circle, rgba(167,181,235,0.1) 0%, rgba(0,0,0,0) 70%)', zIndex: 0, pointerEvents: 'none' }}></div>
           
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CLIMA ACTUAL</span>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>
-                {Math.round(current.temperature_2m)}°C
-              </span>
-              <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>
-                {getWeatherDescription(current.weather_code)}
-              </span>
-            </div>
-            <div style={{ padding: '10px' }}>
-              {getWeatherIcon(current.weather_code, current.is_day, 64)}
-            </div>
-          </div>
-          
-          <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '24px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Thermometer size={18} style={{ color: '#FF9100' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Sensación Térm.</span>
-                <span style={{ fontSize: '1rem', fontWeight: 600 }}>{Math.round(current.apparent_temperature)}°C</span>
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-around', flex: 1, flexWrap: 'wrap', gap: '30px' }}>
+            
+            {/* Temperatura e Icono */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+              <div style={{ padding: '10px' }}>
+                {getWeatherIcon(current.weather_code, current.is_day, 80)}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CLIMA ACTUAL</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: '4rem', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+                  {Math.round(current.temperature_2m)}°C
+                </span>
+                <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>
+                  {getWeatherDescription(current.weather_code)}
+                </span>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Droplets size={18} style={{ color: '#00F2FE' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Humedad</span>
-                <span style={{ fontSize: '1rem', fontWeight: 600 }}>{current.relative_humidity_2m}%</span>
+            
+            {/* 4 Métricas */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', background: 'rgba(0,0,0,0.2)', padding: '20px 30px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Thermometer size={24} style={{ color: '#FF9100' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sensación</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{Math.round(current.apparent_temperature)}°C</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Droplets size={24} style={{ color: '#00F2FE' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Humedad</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.relative_humidity_2m}%</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Wind size={24} style={{ color: '#A7B5EB' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Viento</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.wind_speed_10m} km/h</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <CloudRain size={24} style={{ color: '#4FACFE' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Lluvia</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.precipitation} mm</span>
+                </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Wind size={18} style={{ color: '#A7B5EB' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Viento</span>
-                <span style={{ fontSize: '1rem', fontWeight: 600 }}>{current.wind_speed_10m} km/h</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <CloudRain size={18} style={{ color: '#4FACFE' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Precipitación</span>
-                <span style={{ fontSize: '1rem', fontWeight: 600 }}>{current.precipitation} mm</span>
-              </div>
-            </div>
+            
           </div>
         </div>
 
         {/* Pronóstico 7 Días (Lista) */}
-        <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <Map size={18} style={{ color: '#00F2FE' }} />
             Pronóstico 7 Días
           </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
             {daily.time.map((time, idx) => (
-              <div key={time} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: idx < daily.time.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+              <div key={time} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: idx < daily.time.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
                   <div style={{ width: '40px' }}>{getWeatherIcon(daily.weather_code[idx], 1, 24)}</div>
                   <span style={{ fontSize: '0.95rem', fontWeight: idx === 0 ? 700 : 500, color: idx === 0 ? '#00F2FE' : '#fff' }}>
@@ -345,9 +358,9 @@ export default function Weather() {
       </div>
 
       {/* Gráfico de Temperaturas */}
-      <div className="glass-card" style={{ padding: '24px' }}>
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px' }}>Tendencia de Temperaturas</h3>
-        <div style={{ height: '260px', width: '100%' }}>
+      <div className="glass-card" style={{ padding: '20px' }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0 }}>Tendencia de Temperaturas</h3>
+        <div style={{ height: '220px', width: '100%', marginTop: '16px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
@@ -375,12 +388,12 @@ export default function Weather() {
       </div>
 
       {/* Mapa Animado de Vientos (Windy) */}
-      <div className="glass-card" style={{ padding: '24px' }}>
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="glass-card" style={{ padding: '20px' }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Map size={18} style={{ color: '#00F2FE' }} />
           Mapa Meteorológico en Vivo
         </h3>
-        <div style={{ width: '100%', height: '450px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ width: '100%', height: '350px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', marginTop: '16px' }}>
           <iframe 
             width="100%" 
             height="100%" 
@@ -392,9 +405,9 @@ export default function Weather() {
       </div>
 
       {/* Webcams (Windy) */}
-      <div className="glass-card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="glass-card" style={{ padding: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
             <Camera size={18} style={{ color: '#00E676' }} />
             Cámaras en Vivo (25 km)
           </h3>
