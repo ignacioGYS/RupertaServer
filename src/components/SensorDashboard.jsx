@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles, Bell, BellOff, TrendingUp } from 'lucide-react';
+import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles, Bell, BellOff, TrendingUp, CloudRain, Sun, Cloud, CloudLightning, Compass } from 'lucide-react';
 
 // Datos descriptivos para los tooltips informativos de calidad de aire
 const PM_INFO_DATA = {
@@ -286,6 +286,58 @@ export default function SensorDashboard() {
       r_uf,
       r_fg
     };
+  };
+
+  const getWeatherForecast = () => {
+    // Buscar mediciones de presión actuales y pasadas
+    const currentPressSensor = getLatestSensor('pressure');
+    if (!currentPressSensor || !history || history.length === 0) return null;
+    
+    const currentP = currentPressSensor.value;
+    const currentT = new Date(currentPressSensor.timestamp).getTime();
+    
+    // Filtramos los items de historial que tengan 'bme280_press' válido
+    const validHistory = history.filter(h => h.bme280_press != null).sort((a, b) => new Date(b.time_bucket) - new Date(a.time_bucket));
+    
+    if (validHistory.length < 2) return null; // No hay suficiente historia
+    
+    // Tratar de buscar algo de hace al menos 1 hora (3600000 ms) y máximo 4 horas
+    let pastP = null;
+    let pastT = null;
+    
+    for (let i = 0; i < validHistory.length; i++) {
+      const hTime = new Date(validHistory[i].time_bucket).getTime();
+      const diffHours = (currentT - hTime) / 3600000;
+      
+      if (diffHours >= 1 && diffHours <= 4) {
+        pastP = validHistory[i].bme280_press;
+        pastT = hTime;
+        break; 
+      }
+    }
+    
+    // Si no hay datos en ese rango, usamos el más antiguo que tengamos (mínimo 30 minutos)
+    if (!pastP) {
+      const oldest = validHistory[validHistory.length - 1];
+      const diffHours = (currentT - new Date(oldest.time_bucket).getTime()) / 3600000;
+      if (diffHours < 0.5) return null; // Muy poco tiempo para una tendencia confiable
+      pastP = oldest.bme280_press;
+      pastT = new Date(oldest.time_bucket).getTime();
+    }
+    
+    const diffHours = (currentT - pastT) / 3600000;
+    const deltaP = currentP - pastP;
+    const rate = deltaP / diffHours; // hPa por hora
+    
+    if (rate <= -1.5) {
+      return { status: 'Tormenta Inminente', desc: 'Caída brusca de presión', icon: CloudLightning, color: '#FF1744', rate };
+    } else if (rate <= -0.5) {
+      return { status: 'Probable Lluvia', desc: 'Presión en descenso', icon: CloudRain, color: '#4FACFE', rate };
+    } else if (rate >= 0.5) {
+      return { status: 'Mejorando / Despejado', desc: 'Presión en aumento', icon: Sun, color: '#FFD600', rate };
+    } else {
+      return { status: 'Estable', desc: 'Sin cambios bruscos', icon: Cloud, color: '#00E676', rate };
+    }
   };
 
   // Pivot historical data for Recharts grouping by 5-minute intervals to align asynchronous readings
@@ -1026,6 +1078,23 @@ void loop() {
                     Actualizado: {new Date(pressureSensor.timestamp).toLocaleTimeString()}
                   </p>
                   {renderStatsGrid('bme280_press', ' hPa', 1)}
+                  {/* Pronóstico del tiempo basado en presión */}
+                  {(() => {
+                    const forecast = getWeatherForecast();
+                    if (!forecast) return null;
+                    const Icon = forecast.icon;
+                    return (
+                      <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', borderLeft: `3px solid ${forecast.color}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <Icon size={16} color={forecast.color} />
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: forecast.color }}>Pronóstico: {forecast.status}</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                          {forecast.desc} (Tendencia: {forecast.rate > 0 ? '+' : ''}{forecast.rate.toFixed(1)} hPa/h)
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div>
