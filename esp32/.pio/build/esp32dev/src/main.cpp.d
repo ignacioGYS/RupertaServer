@@ -237,6 +237,17 @@
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.h \
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson.hpp \
  .pio/libdeps/esp32dev/ArduinoJson/src/ArduinoJson/Configuration.hpp \
+ /home/ignacio/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src/Wire.h \
+ /home/ignacio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal.h \
+ .pio/libdeps/esp32dev/Adafruit\ Unified\ Sensor/Adafruit_Sensor.h \
+ .pio/libdeps/esp32dev/Adafruit\ BMP280\ Library/Adafruit_BMP280.h \
+ .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_I2CDevice.h \
+ .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_SPIDevice.h \
+ /home/ignacio/.platformio/packages/framework-arduinoespressif32/libraries/SPI/src/SPI.h \
+ /home/ignacio/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-spi.h \
+ .pio/libdeps/esp32dev/Adafruit\ AHTX0/Adafruit_AHTX0.h \
+ .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_BusIO_Register.h \
+ .pio/libdeps/esp32dev/Adafruit\ BusIO/Adafruit_GenericDevice.h \
  .pio/libdeps/esp32dev/OneWire/OneWire.h \
  .pio/libdeps/esp32dev/OneWire/util/OneWire_direct_regtype.h \
  .pio/libdeps/esp32dev/DallasTemperature/DallasTemperature.h
