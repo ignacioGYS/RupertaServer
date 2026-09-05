@@ -288,20 +288,9 @@ void loop() {
         }
 
         if (bmpAvailable && !isnan(pressure)) {
-          float bmeTemp = bmp.readTemperature();
-          
-          Serial.print("Lectura BMP280 — Temp: ");
-          Serial.print(bmeTemp);
-          Serial.print(" °C | Presión: ");
+          Serial.print("Lectura BMP280 — Presión: ");
           Serial.print(pressure);
           Serial.println(" hPa");
-
-          // Temperatura del BMP280
-          JsonObject rTemp2 = readings.createNestedObject();
-          rTemp2["sensor_name"] = "bme280_temp";
-          rTemp2["sensor_type"] = "temperature";
-          rTemp2["value"] = bmeTemp;
-          rTemp2["unit"] = "°C";
 
           // Presión atmosférica
           JsonObject rPress = readings.createNestedObject();

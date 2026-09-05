@@ -1014,39 +1014,6 @@ void loop() {
               )}
             </div>
 
-            {/* BME280 Temperature Card */}
-            <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ position: 'absolute', top: '-10px', right: '-10px', opacity: 0.05, pointerEvents: 'none' }}>
-                <Thermometer size={100} style={{ color: bmeTempSensor ? getTempColor(bmeTempSensor.value) : '#fff' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Temperatura</span>
-                <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: 'var(--color-primary)', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
-                  BME280
-                </span>
-              </div>
-              {bmeTempSensor && isSensorActive(bmeTempSensor) ? (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: getTempColor(bmeTempSensor.value) }}>
-                      {bmeTempSensor.value.toFixed(1)}
-                    </span>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-secondary)' }}>°C</span>
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Actualizado: {new Date(bmeTempSensor.timestamp).toLocaleTimeString()}
-                  </p>
-                  {renderStatsGrid('bme280_temp', '°C', 1)}
-                </div>
-              ) : (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                    <span style={{ fontSize: '2.5rem', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-muted)' }}>---</span>
-                  </div>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px', fontWeight: 500 }}>No se está midiendo</p>
-                </div>
-              )}
-            </div>
 
             {/* Humidity Card (BME280) */}
             <div className="glass-card" style={{ padding: '20px', position: 'relative', overflow: 'hidden' }}>
