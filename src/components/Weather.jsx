@@ -283,90 +283,92 @@ export default function Weather() {
         </div>
       </div>
 
-      {/* Clima Actual (Ancho Completo) */}
-      <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-        {/* Fondo sutil según clima */}
-        <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '150%', height: '150%', background: isDay ? 'radial-gradient(circle, rgba(255,193,7,0.1) 0%, rgba(0,0,0,0) 70%)' : 'radial-gradient(circle, rgba(167,181,235,0.1) 0%, rgba(0,0,0,0) 70%)', zIndex: 0, pointerEvents: 'none' }}></div>
-        
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-around', flex: 1, flexWrap: 'wrap', gap: '30px' }}>
+            <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
+        {/* Clima Actual */}
+        <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+          {/* Fondo sutil según clima */}
+          <div style={{ position: 'absolute', top: '-50%', right: '-20%', width: '150%', height: '150%', background: isDay ? 'radial-gradient(circle, rgba(255,193,7,0.1) 0%, rgba(0,0,0,0) 70%)' : 'radial-gradient(circle, rgba(167,181,235,0.1) 0%, rgba(0,0,0,0) 70%)', zIndex: 0, pointerEvents: 'none' }}></div>
           
-          {/* Temperatura e Icono */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            <div style={{ padding: '10px' }}>
-              {getWeatherIcon(current.weather_code, current.is_day, 80)}
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '100%', gap: '20px' }}>
+            
+            {/* Temperatura e Icono */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CLIMA ACTUAL</span>
+                <span style={{ fontFamily: 'var(--font-display)', fontSize: '3.5rem', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+                  {Math.round(current.temperature_2m)}°C
+                </span>
+                <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>
+                  {getWeatherDescription(current.weather_code)}
+                </span>
+              </div>
+              <div style={{ padding: '10px' }}>
+                {getWeatherIcon(current.weather_code, current.is_day, 64)}
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>CLIMA ACTUAL</span>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: '4rem', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
-                {Math.round(current.temperature_2m)}°C
-              </span>
-              <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>
-                {getWeatherDescription(current.weather_code)}
-              </span>
+            
+            {/* 4 Métricas */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Thermometer size={24} style={{ color: '#FF9100' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sensación</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{Math.round(current.apparent_temperature)}°C</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Droplets size={24} style={{ color: '#00F2FE' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Humedad</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.relative_humidity_2m}%</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Wind size={24} style={{ color: '#A7B5EB' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Viento</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.wind_speed_10m} km/h</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <CloudRain size={24} style={{ color: '#4FACFE' }} />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Lluvia</span>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.precipitation} mm</span>
+                </div>
+              </div>
             </div>
+            
           </div>
-          
-          {/* 4 Métricas */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', background: 'rgba(0,0,0,0.2)', padding: '20px 30px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Thermometer size={24} style={{ color: '#FF9100' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sensación</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{Math.round(current.apparent_temperature)}°C</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Droplets size={24} style={{ color: '#00F2FE' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Humedad</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.relative_humidity_2m}%</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Wind size={24} style={{ color: '#A7B5EB' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Viento</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.wind_speed_10m} km/h</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <CloudRain size={24} style={{ color: '#4FACFE' }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Lluvia</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{current.precipitation} mm</span>
-              </div>
-            </div>
-          </div>
-          
         </div>
-      </div>
 
-      {/* Pronóstico por Hora (Scroll Horizontal) */}
-      <div className="glass-card" style={{ padding: '20px' }}>
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Clock4 size={18} style={{ color: '#00F2FE' }} />
-          Próximas 24 Horas
-        </h3>
-        <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '12px', marginTop: '16px', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.2) transparent' }}>
-          {next24Hours.map((h, i) => (
-            <div key={i} style={{ 
-              display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '70px', padding: '12px 8px',
-              background: i === 0 ? 'rgba(0,242,254,0.1)' : 'rgba(255,255,255,0.03)', 
-              borderRadius: '12px', border: i === 0 ? '1px solid rgba(0,242,254,0.3)' : '1px solid rgba(255,255,255,0.05)'
-            }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? '#00F2FE' : 'var(--text-secondary)' }}>
-                {i === 0 ? 'Ahora' : h.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-              <div style={{ margin: '8px 0' }}>
-                {getWeatherIcon(h.code, h.isDay, 28)}
+        {/* Pronóstico por Hora (Scroll Horizontal) */}
+        <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Clock4 size={18} style={{ color: '#00F2FE' }} />
+            Próximas 24 Horas
+          </h3>
+          <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '12px', marginTop: '16px', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.2) transparent', flex: 1, alignItems: 'center' }}>
+            {next24Hours.map((h, i) => (
+              <div key={i} style={{ 
+                display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '70px', padding: '12px 8px',
+                background: i === 0 ? 'rgba(0,242,254,0.1)' : 'rgba(255,255,255,0.03)', 
+                borderRadius: '12px', border: i === 0 ? '1px solid rgba(0,242,254,0.3)' : '1px solid rgba(255,255,255,0.05)'
+              }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? '#00F2FE' : 'var(--text-secondary)' }}>
+                  {i === 0 ? 'Ahora' : h.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <div style={{ margin: '8px 0' }}>
+                  {getWeatherIcon(h.code, h.isDay, 28)}
+                </div>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{h.temp}°</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', opacity: h.precipProb > 0 ? 1 : 0.2 }}>
+                  <Droplets size={10} color="#00F2FE" />
+                  <span style={{ fontSize: '0.7rem', color: '#00F2FE', fontWeight: 600 }}>{h.precipProb}%</span>
+                </div>
               </div>
-              <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{h.temp}°</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', opacity: h.precipProb > 0 ? 1 : 0.2 }}>
-                <Droplets size={10} color="#00F2FE" />
-                <span style={{ fontSize: '0.7rem', color: '#00F2FE', fontWeight: 600 }}>{h.precipProb}%</span>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
@@ -547,8 +549,7 @@ export default function Weather() {
           )}
         </div>
       </div>
-
-      {/* Modal Reproductor */}
+{/* Modal Reproductor */}
       {selectedWebcam && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ background: '#111827', border: '1px solid var(--border-color)', borderRadius: '16px', overflow: 'hidden', width: '100%', maxWidth: '800px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
