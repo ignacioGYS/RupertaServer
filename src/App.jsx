@@ -13,6 +13,7 @@ import Lights from './components/Lights';
 import SensorDashboard from './components/SensorDashboard';
 import SidebarWeatherWidget from './components/SidebarWeatherWidget';
 import Weather from './components/Weather';
+import DailyInfo from './components/DailyInfo';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -338,6 +339,7 @@ function App() {
     { id: 'lights',     label: 'Luces',               shortLabel: 'Luces',      icon: <Lightbulb /> },
     { id: 'sensors',    label: 'Sensores IoT',        shortLabel: 'Sensores',   icon: <Thermometer /> },
     { id: 'weather',    label: 'Clima',               shortLabel: 'Clima',      icon: <CloudSun /> },
+    { id: 'dailyinfo',  label: 'Info Diaria',         shortLabel: 'Diaria',     icon: <Lightbulb /> },
     { id: 'files',      label: 'Archivos (SFTP)',      shortLabel: 'Archivos',   icon: <Folder /> },
     { id: 'terminal',   label: 'Terminal SSH',        shortLabel: 'Terminal',   icon: <TermIcon /> },
   ];
@@ -352,6 +354,7 @@ function App() {
     lights:     <Lights />,
     sensors:    <SensorDashboard />,
     weather:    <Weather />,
+    dailyinfo:  <DailyInfo />,
     files:      <FileExplorer />,
     terminal:   <Terminal />,
   };
@@ -366,6 +369,7 @@ function App() {
     lights:     { title: 'Luces',                  subtitle: 'Control de luces inteligentes WiZ en la red local' },
     sensors:    { title: 'Sensores IoT (ESP32)',   subtitle: 'Temperatura, humedad, presión y calidad del aire en tiempo real' },
     weather:    { title: 'Clima Local',            subtitle: 'Pronóstico extendido del tiempo para tu servidor' },
+    dailyinfo:  { title: 'Información Diaria',     subtitle: 'Finanzas, Criptomonedas, Astronomía y Tránsito en tiempo real' },
     files:      { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' },
     terminal:   { title: 'Terminal SSH',           subtitle: 'Línea de comandos remota segura' },
   };
