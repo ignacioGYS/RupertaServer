@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sun, CloudSun, Cloud, CloudFog, CloudRain, CloudSnow, CloudLightning, 
-  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play, Clock, RefreshCw
+  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play, Clock, RefreshCw, Clock4
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -46,7 +46,7 @@ export default function Weather() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`);
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=2`);
       if (!res.ok) throw new Error('Error al obtener datos del clima');
       const data = await res.json();
       setWeatherData(data);
@@ -224,7 +224,7 @@ export default function Weather() {
     );
   }
 
-  const { current, daily } = weatherData;
+  const { current, daily, hourly } = weatherData;
   const isDay = current.is_day === 1;
 
   // Preparar datos para el gráfico de 7 días
@@ -233,6 +233,22 @@ export default function Weather() {
     max: daily.temperature_2m_max[idx],
     min: daily.temperature_2m_min[idx]
   }));
+
+  // Extraer las próximas 24 horas del array 'hourly'
+  const currentHourStr = current.time.substring(0, 13) + ':00';
+  let startIdx = hourly.time.indexOf(currentHourStr);
+  if (startIdx === -1) startIdx = 0;
+  
+  const next24Hours = hourly.time.slice(startIdx, startIdx + 24).map((time, idx) => {
+    const realIdx = startIdx + idx;
+    return {
+      time: new Date(time),
+      temp: Math.round(hourly.temperature_2m[realIdx]),
+      precipProb: hourly.precipitation_probability[realIdx],
+      code: hourly.weather_code[realIdx],
+      isDay: hourly.is_day[realIdx] === 1
+    };
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -354,6 +370,35 @@ export default function Weather() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Pronóstico por Hora (Scroll Horizontal) */}
+      <div className="glass-card" style={{ padding: '20px' }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Clock4 size={18} style={{ color: '#00F2FE' }} />
+          Próximas 24 Horas
+        </h3>
+        <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '12px', marginTop: '16px', scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.2) transparent' }}>
+          {next24Hours.map((h, i) => (
+            <div key={i} style={{ 
+              display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '70px', padding: '12px 8px',
+              background: i === 0 ? 'rgba(0,242,254,0.1)' : 'rgba(255,255,255,0.03)', 
+              borderRadius: '12px', border: i === 0 ? '1px solid rgba(0,242,254,0.3)' : '1px solid rgba(255,255,255,0.05)'
+            }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? '#00F2FE' : 'var(--text-secondary)' }}>
+                {i === 0 ? 'Ahora' : h.time.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <div style={{ margin: '8px 0' }}>
+                {getWeatherIcon(h.code, h.isDay, 28)}
+              </div>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700 }}>{h.temp}°</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', opacity: h.precipProb > 0 ? 1 : 0.2 }}>
+                <Droplets size={10} color="#00F2FE" />
+                <span style={{ fontSize: '0.7rem', color: '#00F2FE', fontWeight: 600 }}>{h.precipProb}%</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
