@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sun, CloudSun, Cloud, CloudFog, CloudRain, CloudSnow, CloudLightning, 
-  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play
+  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play, Clock, RefreshCw
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -13,6 +13,9 @@ export default function Weather() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   
   const [windyApiKey, setWindyApiKey] = useState(() => localStorage.getItem('ruperta-windy-api-key') || 'NKiKVRA4DYhrEpJBxf7QDCSQB7920tcD');
   const [webcams, setWebcams] = useState([]);
@@ -47,6 +50,7 @@ export default function Weather() {
       if (!res.ok) throw new Error('Error al obtener datos del clima');
       const data = await res.json();
       setWeatherData(data);
+      setLastUpdate(new Date());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -56,7 +60,7 @@ export default function Weather() {
 
   useEffect(() => {
     fetchWeather(location.lat, location.lon);
-  }, [location]);
+  }, [location, refreshKey]);
 
   useEffect(() => {
     if (windyApiKey) {
@@ -85,7 +89,7 @@ export default function Weather() {
       }
     };
     fetchWebcams();
-  }, [location, windyApiKey]);
+  }, [location, windyApiKey, refreshKey]);
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -231,13 +235,29 @@ export default function Weather() {
           <MapPin style={{ color: '#FF5252' }} size={24} />
           <div>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.2 }}>{location.name}</h2>
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{location.country}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{location.country}</span>
+              {lastUpdate && (
+                <>
+                  <span style={{ color: 'var(--text-muted)' }}>•</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={12} />
+                    Actualizado: {lastUpdate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
-        <button onClick={() => setIsConfiguring(true)} className="btn" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)' }}>
-          <Settings size={16} />
-          <span>Cambiar</span>
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setRefreshKey(prev => prev + 1)} className="btn" title="Actualizar datos" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '38px', height: '38px', padding: 0, background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+            <RefreshCw size={16} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          </button>
+          <button onClick={() => setIsConfiguring(true)} className="btn" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+            <Settings size={16} />
+            <span>Cambiar</span>
+          </button>
+        </div>
       </div>
 
       <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
@@ -351,6 +371,23 @@ export default function Weather() {
               <Area type="monotone" dataKey="min" stroke="#4FACFE" strokeWidth={3} fillOpacity={1} fill="url(#minTempGrad)" name="Mínima" />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Mapa Animado de Vientos (Windy) */}
+      <div className="glass-card" style={{ padding: '24px' }}>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Map size={18} style={{ color: '#00F2FE' }} />
+          Mapa Meteorológico en Vivo
+        </h3>
+        <div style={{ width: '100%', height: '450px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <iframe 
+            width="100%" 
+            height="100%" 
+            src={`https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km/h&zoom=10&overlay=wind&product=ecmwf&level=surface&lat=${location.lat}&lon=${location.lon}`}
+            frameBorder="0" 
+            title="Windy Map Forecast"
+          ></iframe>
         </div>
       </div>
 
