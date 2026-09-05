@@ -12,7 +12,8 @@ const SidebarWeatherWidget = () => {
       try {
         // Fetch latest to get current temp and pressure
         const resLatest = await fetch(`/api/sensors/latest?_t=${Date.now()}`);
-        const latestSensors = await resLatest.json();
+        const latestSensorsData = await resLatest.json();
+        const latestSensors = latestSensorsData.sensors || [];
         
         const tempSensor = latestSensors.find(s => s.sensor_name === 'ds18b20_temp');
         const pressSensor = latestSensors.find(s => s.sensor_type === 'pressure');
@@ -27,9 +28,12 @@ const SidebarWeatherWidget = () => {
 
         // Fetch history to calculate trend
         const resHistory = await fetch(`/api/sensors/history?hours=4&_t=${Date.now()}`);
-        const historyData = await resHistory.json();
+        const historyDataPayload = await resHistory.json();
+        const historyData = historyDataPayload.history || [];
         
-        const validHistory = historyData.filter(h => h.bme280_press != null).sort((a, b) => new Date(b.time_bucket) - new Date(a.time_bucket));
+        const validHistory = historyData
+          .filter(h => h.sensor_name === 'bme280_press')
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         
         let rate = 0;
         let trendStatus = 'stable';
@@ -39,11 +43,11 @@ const SidebarWeatherWidget = () => {
           let pastT = null;
 
           for (let i = 0; i < validHistory.length; i++) {
-            const hTime = new Date(validHistory[i].time_bucket).getTime();
+            const hTime = new Date(validHistory[i].timestamp).getTime();
             const diffHours = (currentT - hTime) / 3600000;
 
             if (diffHours >= 1 && diffHours <= 4) {
-              pastP = validHistory[i].bme280_press;
+              pastP = validHistory[i].value;
               pastT = hTime;
               break;
             }
@@ -51,10 +55,10 @@ const SidebarWeatherWidget = () => {
 
           if (!pastP) {
             const oldest = validHistory[validHistory.length - 1];
-            const diffHours = (currentT - new Date(oldest.time_bucket).getTime()) / 3600000;
+            const diffHours = (currentT - new Date(oldest.timestamp).getTime()) / 3600000;
             if (diffHours >= 0.5) {
-              pastP = oldest.bme280_press;
-              pastT = new Date(oldest.time_bucket).getTime();
+              pastP = oldest.value;
+              pastT = new Date(oldest.timestamp).getTime();
             }
           }
 
