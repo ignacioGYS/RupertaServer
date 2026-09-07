@@ -244,7 +244,7 @@ export default function DailyInfo() {
             </h3>
           </div>
 
-          <div style={{ display: 'flex', flex: 1, gap: '20px' }}>
+          <div style={{ display: 'flex', flex: 1, gap: '20px', marginBottom: '16px' }}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ background: 'rgba(255,145,0,0.1)', padding: '10px', borderRadius: '12px', color: '#FF9100' }}>
@@ -270,25 +270,30 @@ export default function DailyInfo() {
               </div>
             </div>
             
-            <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)', height: '100%' }}></div>
+            <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ fontSize: '3rem', lineHeight: 1 }}>{moonDetails.icon}</span>
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', textAlign: 'center' }}>{moonDetails.name}</span>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Fase {(moonPhase * 100).toFixed(0)}%</span>
-              
-              <div style={{ display: 'flex', gap: '6px', marginTop: '4px', background: 'rgba(0,0,0,0.2)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                {next7DaysMoon.map((m, i) => {
-                  const d = new Date();
-                  d.setDate(d.getDate() + i + 1);
-                  const dayName = d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' });
-                  return (
-                    <span key={i} style={{ fontSize: '1rem', opacity: 0.8, cursor: 'help' }} title={`${dayName}: ${m.name}`}>
-                      {m.icon}
-                    </span>
-                  );
-                })}
-              </div>
+            </div>
+          </div>
+          
+          {/* Próximos 7 días abajo */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, textAlign: 'center', letterSpacing: '0.05em' }}>FASES PRÓXIMOS 7 DÍAS</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', background: 'rgba(0,0,0,0.2)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              {next7DaysMoon.map((m, i) => {
+                const d = new Date();
+                d.setDate(d.getDate() + i + 1);
+                const dayName = d.toLocaleDateString('es-ES', { weekday: 'short' });
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'help' }} title={`${m.name}`}>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>{dayName}</span>
+                    <span style={{ fontSize: '1.2rem', opacity: 0.9 }}>{m.icon}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
