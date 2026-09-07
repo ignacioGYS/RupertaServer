@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw, Newspaper } from 'lucide-react';
+import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw, Newspaper, Clock } from 'lucide-react';
 
 function getMoonPhase(date = new Date()) {
   const L = 29.530588853;
@@ -26,6 +26,7 @@ export default function DailyInfo() {
   const [crypto, setCrypto] = useState({});
   const [astro, setAstro] = useState(null);
   const [noticias, setNoticias] = useState([]);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -73,6 +74,7 @@ export default function DailyInfo() {
       console.error(err);
     } finally {
       setLoading(false);
+      setLastUpdated(new Date());
     }
   };
 
@@ -125,7 +127,14 @@ export default function DailyInfo() {
               <DollarSign size={18} style={{ color: '#00E676' }} />
               Cotización del Dólar
             </h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ARS</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {lastUpdated && (
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }} title="Última actualización">
+                  <Clock size={10} /> {lastUpdated.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ARS</span>
+            </div>
           </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -154,7 +163,14 @@ export default function DailyInfo() {
               <Bitcoin size={18} style={{ color: '#FF9100' }} />
               Criptomonedas
             </h3>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>USD</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {lastUpdated && (
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }} title="Última actualización">
+                  <Clock size={10} /> {lastUpdated.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>USD</span>
+            </div>
           </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, justifyContent: 'center' }}>
@@ -219,6 +235,11 @@ export default function DailyInfo() {
               <Newspaper size={18} style={{ color: '#E91E63' }} />
               Últimas Noticias (Clarín)
             </h3>
+            {lastUpdated && (
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }} title="Última actualización">
+                <Clock size={10} /> {lastUpdated.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
@@ -242,6 +263,11 @@ export default function DailyInfo() {
               <Sun size={18} style={{ color: '#FFD700' }} />
               Ciclo Solar y Lunar
             </h3>
+            {lastUpdated && (
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }} title="Última actualización">
+                <Clock size={10} /> {lastUpdated.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', flex: 1, gap: '20px', marginBottom: '16px' }}>

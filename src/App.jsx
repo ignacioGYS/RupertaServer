@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -234,6 +234,9 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
+  const [collapsedCategories, setCollapsedCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar-cats-collapsed')) || {}; } catch { return {}; }
+  });
   const [alertsEnabled, setAlertsEnabled] = useState(() => {
     try { return localStorage.getItem('ruperta-sys-alerts') === 'true'; } catch { return false; }
   });
@@ -287,6 +290,14 @@ function App() {
     });
   };
 
+  const toggleCategory = (category) => {
+    setCollapsedCategories(prev => {
+      const next = { ...prev, [category]: !prev[category] };
+      try { localStorage.setItem('sidebar-cats-collapsed', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
   const handleUpdateConfirm = async () => {
     setUpdateStatus('updating');
     try {
@@ -330,18 +341,21 @@ function App() {
   };
 
   const menuItems = [
-    { id: 'dashboard',  label: 'Panel Control',      shortLabel: 'Panel',      icon: <Activity /> },
-    { id: 'docker',     label: 'Docker',              shortLabel: 'Docker',     icon: <Layers /> },
-    { id: 'processes',  label: 'Procesos',            shortLabel: 'Procesos',   icon: <Cpu /> },
-    { id: 'hardware',   label: 'Hardware',            shortLabel: 'Hardware',   icon: <HardwareIcon /> },
-    { id: 'gpu',        label: 'GPU',                 shortLabel: 'GPU',        icon: <GpuIcon /> },
-    { id: 'network',    label: 'Red',                 shortLabel: 'Red',        icon: <Network /> },
-    { id: 'lights',     label: 'Luces',               shortLabel: 'Luces',      icon: <Lightbulb /> },
-    { id: 'sensors',    label: 'Sensores IoT',        shortLabel: 'Sensores',   icon: <Thermometer /> },
-    { id: 'weather',    label: 'Clima',               shortLabel: 'Clima',      icon: <CloudSun /> },
-    { id: 'dailyinfo',  label: 'Info Diaria',         shortLabel: 'Diaria',     icon: <Lightbulb /> },
-    { id: 'files',      label: 'Archivos (SFTP)',      shortLabel: 'Archivos',   icon: <Folder /> },
-    { id: 'terminal',   label: 'Terminal SSH',        shortLabel: 'Terminal',   icon: <TermIcon /> },
+    { category: 'Resumen', id: 'dashboard',  label: 'Panel Control',      shortLabel: 'Panel',      icon: <Activity /> },
+    { category: 'Resumen', id: 'dailyinfo',  label: 'Info Diaria',         shortLabel: 'Diaria',     icon: <Lightbulb /> },
+    
+    { category: 'Sistema', id: 'docker',     label: 'Docker',              shortLabel: 'Docker',     icon: <Layers /> },
+    { category: 'Sistema', id: 'processes',  label: 'Procesos',            shortLabel: 'Procesos',   icon: <Cpu /> },
+    { category: 'Sistema', id: 'hardware',   label: 'Hardware',            shortLabel: 'Hardware',   icon: <HardwareIcon /> },
+    { category: 'Sistema', id: 'gpu',        label: 'GPU',                 shortLabel: 'GPU',        icon: <GpuIcon /> },
+    
+    { category: 'Red & Acceso', id: 'network',    label: 'Red',                 shortLabel: 'Red',        icon: <Network /> },
+    { category: 'Red & Acceso', id: 'files',      label: 'Archivos (SFTP)',      shortLabel: 'Archivos',   icon: <Folder /> },
+    { category: 'Red & Acceso', id: 'terminal',   label: 'Terminal SSH',        shortLabel: 'Terminal',   icon: <TermIcon /> },
+    
+    { category: 'Hogar Inteligente', id: 'lights',     label: 'Luces',               shortLabel: 'Luces',      icon: <Lightbulb /> },
+    { category: 'Hogar Inteligente', id: 'sensors',    label: 'Sensores IoT',        shortLabel: 'Sensores',   icon: <Thermometer /> },
+    { category: 'Hogar Inteligente', id: 'weather',    label: 'Clima',               shortLabel: 'Clima',      icon: <CloudSun /> },
   ];
 
   const components = {
@@ -399,19 +413,45 @@ function App() {
 
         <nav style={{ flexGrow: 1 }}>
           <ul className="nav-menu">
-            {menuItems.map(item => (
-              <li key={item.id} className="nav-item" data-tooltip={item.label}>
-                <button
-                  className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
-                  onClick={() => handleTabChange(item.id)}
-                  style={{ background: 'none', width: '100%', border: 'none', textAlign: 'left' }}
-                  title={sidebarCollapsed ? item.label : ''}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </button>
-              </li>
-            ))}
+            {menuItems.map((item, index) => {
+              const prevCategory = index > 0 ? menuItems[index - 1].category : null;
+              const showCategory = item.category !== prevCategory;
+              const isCategoryCollapsed = collapsedCategories[item.category] && !sidebarCollapsed;
+              
+              return (
+                <React.Fragment key={item.id}>
+                  {showCategory && !sidebarCollapsed && (
+                    <li 
+                      className="nav-section-title" 
+                      onClick={() => toggleCategory(item.category)}
+                      style={{ 
+                        fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: index === 0 ? '0' : '16px', marginBottom: '6px', paddingLeft: '16px', paddingRight: '12px', fontWeight: 600,
+                        cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                      }}
+                    >
+                      {item.category}
+                      {collapsedCategories[item.category] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    </li>
+                  )}
+                  {showCategory && sidebarCollapsed && index > 0 && (
+                     <li style={{ height: '1px', background: 'var(--border-color)', margin: '8px 0', width: '100%' }}></li>
+                  )}
+                  {!isCategoryCollapsed && (
+                    <li className="nav-item" data-tooltip={item.label}>
+                      <button
+                        className={`nav-link ${activeTab === item.id ? 'active' : ''}`}
+                        onClick={() => handleTabChange(item.id)}
+                        style={{ background: 'none', width: '100%', border: 'none', textAlign: 'left' }}
+                        title={sidebarCollapsed ? item.label : ''}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </button>
+                    </li>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </ul>
         </nav>
 
