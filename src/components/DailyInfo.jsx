@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw } from 'lucide-react';
+import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw, Newspaper } from 'lucide-react';
 
-function getMoonPhase() {
+function getMoonPhase(date = new Date()) {
   const L = 29.530588853;
   const knownNewMoon = new Date('2024-01-11T11:57:00Z');
-  const date = new Date();
   const daysSince = (date - knownNewMoon) / (1000 * 60 * 60 * 24);
   let phase = (daysSince % L) / L;
   if (phase < 0) phase += 1;
@@ -26,6 +25,7 @@ export default function DailyInfo() {
   const [dolares, setDolares] = useState([]);
   const [crypto, setCrypto] = useState({});
   const [astro, setAstro] = useState(null);
+  const [noticias, setNoticias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -60,6 +60,14 @@ export default function DailyInfo() {
       const dataAstro = await resAstro.json();
       setAstro(dataAstro.results);
 
+      // Noticias (Clarín RSS)
+      const rssUrl = 'https://www.clarin.com/rss/lo-ultimo/';
+      const resNoticias = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
+      const dataNoticias = await resNoticias.json();
+      if (dataNoticias.status === 'ok') {
+        setNoticias(dataNoticias.items.slice(0, 5));
+      }
+
     } catch (err) {
       setError('Error al obtener la información diaria');
       console.error(err);
@@ -77,9 +85,17 @@ export default function DailyInfo() {
   const moonPhase = getMoonPhase();
   const moonDetails = getMoonPhaseDetails(moonPhase);
 
+  const next7DaysMoon = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i + 1);
+    const phase = getMoonPhase(d);
+    return getMoonPhaseDetails(phase);
+  });
+
   const formatTime = (isoString) => {
     if (!isoString) return '';
-    return new Date(isoString).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = isoString.includes('T') ? isoString : isoString.replace(' ', 'T');
+    return new Date(dateStr).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -196,6 +212,29 @@ export default function DailyInfo() {
           </div>
         </div>
 
+        {/* Tarjeta Noticias */}
+        <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Newspaper size={18} style={{ color: '#E91E63' }} />
+              Últimas Noticias (Clarín)
+            </h3>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+            {noticias.length > 0 ? (
+              noticias.map((item, index) => (
+                <a key={index} href={item.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', gap: '4px', paddingBottom: '8px', borderBottom: index < noticias.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', transition: 'opacity 0.2s' }} onMouseEnter={e => e.currentTarget.style.opacity = '0.7'} onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#fff', lineHeight: 1.3 }}>{item.title}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{formatTime(item.pubDate)}</span>
+                </a>
+              ))
+            ) : (
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Cargando noticias...</span>
+            )}
+          </div>
+        </div>
+
         {/* Tarjeta Astronomía */}
         <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -237,6 +276,19 @@ export default function DailyInfo() {
               <span style={{ fontSize: '3rem', lineHeight: 1 }}>{moonDetails.icon}</span>
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', textAlign: 'center' }}>{moonDetails.name}</span>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Fase {(moonPhase * 100).toFixed(0)}%</span>
+              
+              <div style={{ display: 'flex', gap: '6px', marginTop: '4px', background: 'rgba(0,0,0,0.2)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                {next7DaysMoon.map((m, i) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + i + 1);
+                  const dayName = d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' });
+                  return (
+                    <span key={i} style={{ fontSize: '1rem', opacity: 0.8, cursor: 'help' }} title={`${dayName}: ${m.name}`}>
+                      {m.icon}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

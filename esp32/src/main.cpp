@@ -298,6 +298,19 @@ void loop() {
           rPress["sensor_type"] = "pressure";
           rPress["value"] = pressure;
           rPress["unit"] = "hPa";
+
+          // Temperatura del BMP280 (para comparar con el DS18B20)
+          float bmpTemp = bmp.readTemperature();
+          if (!isnan(bmpTemp)) {
+            JsonObject rBmpTemp = readings.createNestedObject();
+            rBmpTemp["sensor_name"] = "bme280_temp";
+            rBmpTemp["sensor_type"] = "temperature";
+            rBmpTemp["value"] = bmpTemp;
+            rBmpTemp["unit"] = "°C";
+            Serial.print("Lectura BMP280 — Temp: ");
+            Serial.print(bmpTemp);
+            Serial.println(" °C");
+          }
         }
         
         if (ahtAvailable && !isnan(humidity)) {
