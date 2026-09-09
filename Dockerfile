@@ -13,8 +13,8 @@ RUN npm install
 # Copiamos todo el código fuente (frontend y backend)
 COPY . .
 
-# Compilamos el frontend construido en Vite
-RUN npm run build
+# Compilamos el frontend construido en Vite (comentado porque lo subimos ya compilado)
+# RUN npm run build
 
 ENV PORT=3001
 ENV HOST=0.0.0.0
