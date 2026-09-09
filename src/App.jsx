@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun, Droplet, LayoutGrid } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -11,9 +11,11 @@ import GpuMonitor from './components/GpuMonitor';
 import NetworkMonitor from './components/NetworkMonitor';
 import Lights from './components/Lights';
 import SensorDashboard from './components/SensorDashboard';
+import BalconIoT from './components/BalconIoT';
 import SidebarWeatherWidget from './components/SidebarWeatherWidget';
 import Weather from './components/Weather';
 import DailyInfo from './components/DailyInfo';
+import SmartApps from './components/SmartApps';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -353,8 +355,10 @@ function App() {
     { category: 'Red & Acceso', id: 'files',      label: 'Archivos (SFTP)',      shortLabel: 'Archivos',   icon: <Folder /> },
     { category: 'Red & Acceso', id: 'terminal',   label: 'Terminal SSH',        shortLabel: 'Terminal',   icon: <TermIcon /> },
     
+    { category: 'Hogar Inteligente', id: 'apps',       label: 'Apps',                shortLabel: 'Apps',       icon: <LayoutGrid /> },
     { category: 'Hogar Inteligente', id: 'lights',     label: 'Luces',               shortLabel: 'Luces',      icon: <Lightbulb /> },
     { category: 'Hogar Inteligente', id: 'sensors',    label: 'Sensores IoT',        shortLabel: 'Sensores',   icon: <Thermometer /> },
+    { category: 'Hogar Inteligente', id: 'balcon',     label: 'Balcón IoT',          shortLabel: 'Balcón',     icon: <Droplet /> },
     { category: 'Hogar Inteligente', id: 'weather',    label: 'Clima',               shortLabel: 'Clima',      icon: <CloudSun /> },
   ];
 
@@ -367,6 +371,8 @@ function App() {
     network:    <NetworkMonitor />,
     lights:     <Lights />,
     sensors:    <SensorDashboard />,
+    balcon:     <BalconIoT />,
+    apps:       <SmartApps />,
     weather:    <Weather />,
     dailyinfo:  <DailyInfo />,
     files:      <FileExplorer />,
@@ -382,6 +388,8 @@ function App() {
     network:    { title: 'Red y Conexiones',       subtitle: 'Dispositivos en la red local y conexiones activas' },
     lights:     { title: 'Luces',                  subtitle: 'Control de luces inteligentes WiZ en la red local' },
     sensors:    { title: 'Sensores IoT (ESP32)',   subtitle: 'Temperatura, humedad, presión y calidad del aire en tiempo real' },
+    balcon:     { title: 'Balcón IoT',             subtitle: 'Sensores de exterior y nivel del tanque de agua del AC' },
+    apps:       { title: 'Aplicaciones del Servidor', subtitle: 'Acceso directo a las herramientas y servicios multimedia' },
     weather:    { title: 'Clima Local',            subtitle: 'Pronóstico extendido del tiempo para tu servidor' },
     dailyinfo:  { title: 'Información Diaria',     subtitle: 'Finanzas, Criptomonedas, Astronomía y Tránsito en tiempo real' },
     files:      { title: 'Explorador de Archivos', subtitle: 'Gestión y edición de archivos remotos vía SFTP' },
