@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles, Bell, BellOff, TrendingUp, CloudRain, Sun, Cloud, CloudLightning, Compass } from 'lucide-react';
+import { Thermometer, Droplets, Gauge, Wind, RefreshCw, Code, BookOpen, AlertTriangle, CheckCircle, Wifi, Copy, Check, Info, Activity, ShieldAlert, Sparkles, Bell, BellOff, TrendingUp, TrendingDown, CloudRain, Sun, Cloud, CloudLightning, Compass, Layers, BarChart2, Table, Eye, Zap, Flame } from 'lucide-react';
 
 // Datos descriptivos para los tooltips informativos de calidad de aire
 const PM_INFO_DATA = {
@@ -561,57 +561,204 @@ export default function SensorDashboard() {
     ].filter(item => item.value > 0);
   };
 
-  const getHourlyAveragePM = (data) => {
+  const getHourlyAverages = (data) => {
     const hourlyData = Array.from({ length: 24 }, (_, i) => ({
       hour: i,
       label: `${String(i).padStart(2, '0')}:00`,
-      totalPM25: 0,
-      count: 0
+      totalPM25: 0, countPM25: 0,
+      totalTemp: 0, countTemp: 0,
+      totalHum: 0, countHum: 0,
+      totalPress: 0, countPress: 0
     }));
 
     data.forEach(bucket => {
-      const pm25 = bucket.zh06_pm25;
       const timestamp = bucket.timestamp;
-      if (pm25 === undefined || !timestamp) return;
-
+      if (!timestamp) return;
       const date = new Date(timestamp);
       if (isNaN(date.getTime())) return;
       const hour = date.getHours();
-      hourlyData[hour].totalPM25 += pm25;
-      hourlyData[hour].count += 1;
+
+      if (bucket.zh06_pm25 !== undefined && bucket.zh06_pm25 !== null) {
+        hourlyData[hour].totalPM25 += bucket.zh06_pm25;
+        hourlyData[hour].countPM25++;
+      }
+      const tempVal = bucket.ds18b20_temp !== undefined ? bucket.ds18b20_temp : bucket.bme280_temp;
+      if (tempVal !== undefined && tempVal !== null) {
+        hourlyData[hour].totalTemp += tempVal;
+        hourlyData[hour].countTemp++;
+      }
+      if (bucket.bme280_hum !== undefined && bucket.bme280_hum !== null) {
+        hourlyData[hour].totalHum += bucket.bme280_hum;
+        hourlyData[hour].countHum++;
+      }
+      if (bucket.bme280_press !== undefined && bucket.bme280_press !== null) {
+        hourlyData[hour].totalPress += bucket.bme280_press;
+        hourlyData[hour].countPress++;
+      }
     });
 
     return hourlyData.map(h => ({
       label: h.label,
-      'Promedio PM2.5': h.count > 0 ? parseFloat((h.totalPM25 / h.count).toFixed(1)) : 0
+      'Promedio PM2.5': h.countPM25 > 0 ? parseFloat((h.totalPM25 / h.countPM25).toFixed(1)) : 0,
+      'Temperatura': h.countTemp > 0 ? parseFloat((h.totalTemp / h.countTemp).toFixed(1)) : null,
+      'Humedad': h.countHum > 0 ? parseFloat((h.totalHum / h.countHum).toFixed(1)) : null,
+      'Presión': h.countPress > 0 ? parseFloat((h.totalPress / h.countPress).toFixed(1)) : null
     }));
   };
 
   const getAdvancedStats = (data) => {
-    let maxPM25 = 0;
-    let sumPM25 = 0;
-    let countPM25 = 0;
-    let cleanCount = 0;
-    let totalCount = 0;
+    let maxPM25 = 0, minPM25 = Infinity, sumPM25 = 0, countPM25 = 0, cleanCount = 0;
+    let maxPM10 = 0, minPM10 = Infinity, sumPM10 = 0, countPM10 = 0, safePM10Count = 0;
+    let maxPM1 = 0, minPM1 = Infinity, sumPM1 = 0, countPM1 = 0, safePM1Count = 0;
+
+    let minTemp = Infinity, maxTemp = -Infinity, sumTemp = 0, countTemp = 0, comfortTempCount = 0;
+    let minHum = Infinity, maxHum = -Infinity, sumHum = 0, countHum = 0, comfortHumCount = 0;
+    let minPress = Infinity, maxPress = -Infinity, sumPress = 0, countPress = 0;
+    let minWater = Infinity, maxWater = -Infinity, sumWater = 0, countWater = 0;
+
+    let firstPress = null, lastPress = null;
 
     data.forEach(bucket => {
+      // PM2.5
       const pm25 = bucket.zh06_pm25;
-      if (pm25 !== undefined) {
+      if (pm25 !== undefined && pm25 !== null) {
         if (pm25 > maxPM25) maxPM25 = pm25;
+        if (pm25 < minPM25) minPM25 = pm25;
         sumPM25 += pm25;
         countPM25++;
+        if (pm25 <= 12) cleanCount++;
+      }
 
-        if (pm25 <= 12) {
-          cleanCount++;
-        }
-        totalCount++;
+      // PM10
+      const pm10 = bucket.zh06_pm10;
+      if (pm10 !== undefined && pm10 !== null) {
+        if (pm10 > maxPM10) maxPM10 = pm10;
+        if (pm10 < minPM10) minPM10 = pm10;
+        sumPM10 += pm10;
+        countPM10++;
+        if (pm10 <= 45) safePM10Count++;
+      }
+
+      // PM1
+      const pm1 = bucket.zh06_pm1;
+      if (pm1 !== undefined && pm1 !== null) {
+        if (pm1 > maxPM1) maxPM1 = pm1;
+        if (pm1 < minPM1) minPM1 = pm1;
+        sumPM1 += pm1;
+        countPM1++;
+        if (pm1 <= 15) safePM1Count++;
+      }
+
+      // Temp (DS18B20 o fallback BME280)
+      const temp = bucket.ds18b20_temp !== undefined ? bucket.ds18b20_temp : bucket.bme280_temp;
+      if (temp !== undefined && temp !== null) {
+        if (temp < minTemp) minTemp = temp;
+        if (temp > maxTemp) maxTemp = temp;
+        sumTemp += temp;
+        countTemp++;
+        if (temp >= 20 && temp <= 25) comfortTempCount++;
+      }
+
+      // Hum
+      const hum = bucket.bme280_hum;
+      if (hum !== undefined && hum !== null) {
+        if (hum < minHum) minHum = hum;
+        if (hum > maxHum) maxHum = hum;
+        sumHum += hum;
+        countHum++;
+        if (hum >= 40 && hum <= 60) comfortHumCount++;
+      }
+
+      // Press
+      const press = bucket.bme280_press;
+      if (press !== undefined && press !== null) {
+        if (press < minPress) minPress = press;
+        if (press > maxPress) maxPress = press;
+        sumPress += press;
+        countPress++;
+        if (firstPress === null) firstPress = press;
+        lastPress = press;
+      }
+
+      // Water level (si existe en history)
+      const water = bucket.ac_water_level;
+      if (water !== undefined && water !== null) {
+        if (water < minWater) minWater = water;
+        if (water > maxWater) maxWater = water;
+        sumWater += water;
+        countWater++;
       }
     });
 
     const avgPM25 = countPM25 > 0 ? (sumPM25 / countPM25).toFixed(1) : 'N/A';
-    const cleanPct = totalCount > 0 ? ((cleanCount / totalCount) * 100).toFixed(0) : '0';
+    const minPM25Str = minPM25 !== Infinity ? minPM25.toFixed(0) : 'N/A';
+    const cleanPct = countPM25 > 0 ? ((cleanCount / countPM25) * 100).toFixed(0) : '0';
 
-    return { maxPM25, avgPM25, cleanPct };
+    const avgPM10 = countPM10 > 0 ? (sumPM10 / countPM10).toFixed(1) : 'N/A';
+    const minPM10Str = minPM10 !== Infinity ? minPM10.toFixed(0) : 'N/A';
+    const safePM10Pct = countPM10 > 0 ? ((safePM10Count / countPM10) * 100).toFixed(0) : '0';
+
+    const avgPM1 = countPM1 > 0 ? (sumPM1 / countPM1).toFixed(1) : 'N/A';
+    const minPM1Str = minPM1 !== Infinity ? minPM1.toFixed(0) : 'N/A';
+    const safePM1Pct = countPM1 > 0 ? ((safePM1Count / countPM1) * 100).toFixed(0) : '0';
+
+    const avgTempNum = countTemp > 0 ? sumTemp / countTemp : null;
+    const avgTemp = avgTempNum !== null ? avgTempNum.toFixed(1) : 'N/A';
+    const minTempStr = minTemp !== Infinity ? minTemp.toFixed(1) : 'N/A';
+    const maxTempStr = maxTemp !== -Infinity ? maxTemp.toFixed(1) : 'N/A';
+    const oscTemp = (minTemp !== Infinity && maxTemp !== -Infinity) ? (maxTemp - minTemp).toFixed(1) : 'N/A';
+    const comfortTempPct = countTemp > 0 ? ((comfortTempCount / countTemp) * 100).toFixed(0) : '0';
+
+    const avgHumNum = countHum > 0 ? sumHum / countHum : null;
+    const avgHum = avgHumNum !== null ? avgHumNum.toFixed(1) : 'N/A';
+    const minHumStr = minHum !== Infinity ? minHum.toFixed(1) : 'N/A';
+    const maxHumStr = maxHum !== -Infinity ? maxHum.toFixed(1) : 'N/A';
+    const oscHum = (minHum !== Infinity && maxHum !== -Infinity) ? (maxHum - minHum).toFixed(1) : 'N/A';
+    const comfortHumPct = countHum > 0 ? ((comfortHumCount / countHum) * 100).toFixed(0) : '0';
+
+    // Punto de Rocío (Dew Point) calculado con fórmula de Magnus-Tetens
+    let dewPoint = 'N/A';
+    let dewPointComfort = { label: 'Sin datos', color: 'var(--text-muted)' };
+    if (avgTempNum !== null && avgHumNum !== null && avgHumNum > 0) {
+      const a = 17.62;
+      const b = 243.12;
+      const alpha = ((a * avgTempNum) / (b + avgTempNum)) + Math.log(avgHumNum / 100);
+      const dp = (b * alpha) / (a - alpha);
+      if (!isNaN(dp)) {
+        dewPoint = dp.toFixed(1);
+        if (dp < 10) dewPointComfort = { label: 'Seco / Fresco', color: '#4FACFE' };
+        else if (dp <= 15) dewPointComfort = { label: 'Confort Óptimo', color: '#00E676' };
+        else if (dp <= 19) dewPointComfort = { label: 'Agradable / Húmedo', color: '#FFD600' };
+        else dewPointComfort = { label: 'Bochornoso / Sofocante', color: '#FF1744' };
+      }
+    }
+
+    const avgPress = countPress > 0 ? (sumPress / countPress).toFixed(1) : 'N/A';
+    const minPressStr = minPress !== Infinity ? minPress.toFixed(1) : 'N/A';
+    const maxPressStr = maxPress !== -Infinity ? maxPress.toFixed(1) : 'N/A';
+    const oscPress = (minPress !== Infinity && maxPress !== -Infinity) ? (maxPress - minPress).toFixed(1) : 'N/A';
+    const pressDelta = (firstPress !== null && lastPress !== null) ? parseFloat((lastPress - firstPress).toFixed(1)) : null;
+
+    const avgWater = countWater > 0 ? (sumWater / countWater).toFixed(1) : null;
+    const minWaterStr = minWater !== Infinity ? minWater.toFixed(1) : null;
+    const maxWaterStr = maxWater !== -Infinity ? maxWater.toFixed(1) : null;
+
+    // Ratios PM
+    const ratioUF = (countPM10 > 0 && countPM1 > 0 && sumPM10 > 0) ? ((sumPM1 / sumPM10) * 100).toFixed(1) : null;
+    const ratioFine = (countPM10 > 0 && countPM25 > 0 && sumPM10 > 0) ? ((sumPM25 / sumPM10) * 100).toFixed(1) : null;
+
+    return {
+      maxPM25, minPM25: minPM25Str, avgPM25, cleanPct,
+      maxPM10, minPM10: minPM10Str, avgPM10, safePM10Pct,
+      maxPM1, minPM1: minPM1Str, avgPM1, safePM1Pct,
+      avgTemp, minTemp: minTempStr, maxTemp: maxTempStr, oscTemp, comfortTempPct,
+      avgHum, minHum: minHumStr, maxHum: maxHumStr, oscHum, comfortHumPct,
+      dewPoint, dewPointComfort,
+      avgPress, minPress: minPressStr, maxPress: maxPressStr, oscPress, pressDelta,
+      avgWater, minWater: minWaterStr, maxWater: maxWaterStr,
+      ratioUF, ratioFine,
+      countTemp, countHum, countPress, countPM25, countWater
+    };
   };
 
   const getAlertInfo = () => {
@@ -713,13 +860,14 @@ export default function SensorDashboard() {
   const pm25Sensor = sensors.find(s => s.sensor_name === 'zh06_pm25');
   const pm10Sensor = sensors.find(s => s.sensor_name === 'zh06_pm10');
   const pm1Sensor = sensors.find(s => s.sensor_name === 'zh06_pm1');
+  const waterSensor = sensors.find(s => s.sensor_name === 'ac_water_level');
 
   const chartData = getChartData();
   const hasData = sensors.length > 0;
   const alertInfo = getAlertInfo();
   const airStats = getAdvancedStats(chartData);
   const pieData = getAirQualityStatesDistribution(chartData);
-  const barData = getHourlyAveragePM(chartData);
+  const barData = getHourlyAverages(chartData);
 
   // C++ ESP32 Firmware template
   const esp32Code = `// --- Ruperta Monitor ESP32 Firmware Template ---
@@ -1573,60 +1721,290 @@ void loop() {
 
       {/* Advanced Analytics Panel */}
       {hasData && activeSubTab === 'analytics' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.3s ease' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', animation: 'fadeIn 0.3s ease' }}>
           
-          {/* KPI Cards Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            
-            {/* Promedio PM2.5 */}
-            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ background: 'rgba(79, 172, 254, 0.08)', color: '#4FACFE', padding: '12px', borderRadius: '12px' }}>
-                <Activity size={24} />
-              </div>
-              <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Promedio PM2.5</span>
-                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
-                  {airStats.avgPM25} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
-                </strong>
-              </div>
+          {/* Header con resumen del período */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={20} style={{ color: 'var(--color-primary)' }} />
+                Analíticas Avanzadas Multi-Sensor
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                Correlación térmica, psicrométrica, barométrica y espectrometría de partículas (últimas {timeRange} horas)
+              </p>
             </div>
-
-            {/* Máximo PM2.5 */}
-            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ background: 'rgba(255, 23, 68, 0.08)', color: '#FF1744', padding: '12px', borderRadius: '12px' }}>
-                <TrendingUp size={24} />
-              </div>
-              <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Máximo PM2.5</span>
-                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
-                  {airStats.maxPM25.toFixed(0)} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>µg/m³</span>
-                </strong>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: '#00F2FE', border: '1px solid rgba(0, 242, 254, 0.2)' }}>
+                {chartData.length} lecturas analizadas
+              </span>
             </div>
-
-            {/* Aire Limpio Pct */}
-            <div className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', position: 'relative', overflow: 'hidden' }}>
-              <div style={{ background: 'rgba(0, 230, 118, 0.08)', color: '#00E676', padding: '12px', borderRadius: '12px' }}>
-                <CheckCircle size={24} />
-              </div>
-              <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block' }}>Tiempo Aire Limpio</span>
-                <strong style={{ fontSize: '1.6rem', fontWeight: 800, color: '#00E676', fontFamily: 'var(--font-display)' }}>
-                  {airStats.cleanPct}%
-                </strong>
-              </div>
-            </div>
-            
           </div>
 
-          {/* Charts Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
+          {/* Bloque 1: Clima Interior y Termodinámica */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Thermometer size={16} style={{ color: '#FF7043' }} />
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                Clima Interior, Humedad y Termodinámica
+              </h4>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              
+              {/* Temperatura Media */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Temperatura Media</span>
+                  <div style={{ background: 'rgba(255, 112, 67, 0.1)', color: '#FF7043', padding: '6px', borderRadius: '8px' }}>
+                    <Thermometer size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgTemp !== 'N/A' ? `${airStats.avgTemp}` : 'N/A'}
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>°C</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Rango: {airStats.minTemp}°C - {airStats.maxTemp}°C</span>
+                  <span style={{ color: '#FF7043', fontWeight: 600 }}>Δ {airStats.oscTemp}°C</span>
+                </div>
+              </div>
+
+              {/* Humedad Relativa Media */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Humedad Media</span>
+                  <div style={{ background: 'rgba(41, 121, 255, 0.1)', color: '#2979FF', padding: '6px', borderRadius: '8px' }}>
+                    <Droplets size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgHum !== 'N/A' ? `${airStats.avgHum}` : 'N/A'}
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>%</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Rango: {airStats.minHum}% - {airStats.maxHum}%</span>
+                  <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.comfortHumPct}% en confort</span>
+                </div>
+              </div>
+
+              {/* Punto de Rocío (Dew Point) */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Punto de Rocío (Dew Point)</span>
+                  <div style={{ background: 'rgba(0, 242, 254, 0.1)', color: '#00F2FE', padding: '6px', borderRadius: '8px' }}>
+                    <CloudRain size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#00F2FE', fontFamily: 'var(--font-display)' }}>
+                    {airStats.dewPoint !== 'N/A' ? `${airStats.dewPoint}` : 'N/A'}
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>°C</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Condensación</span>
+                  <span style={{ color: airStats.dewPointComfort.color, fontWeight: 600 }}>{airStats.dewPointComfort.label}</span>
+                </div>
+              </div>
+
+              {/* Presión Atmosférica Media y Tendencia */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Presión Media</span>
+                  <div style={{ background: 'rgba(0, 230, 118, 0.1)', color: '#00E676', padding: '6px', borderRadius: '8px' }}>
+                    <Gauge size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgPress !== 'N/A' ? `${airStats.avgPress}` : 'N/A'}
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>hPa</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Mín: {airStats.minPress} - Máx: {airStats.maxPress}</span>
+                  <span style={{ color: airStats.pressDelta && airStats.pressDelta > 0 ? '#00E676' : airStats.pressDelta && airStats.pressDelta < 0 ? '#FF1744' : 'var(--text-muted)', fontWeight: 600 }}>
+                    {airStats.pressDelta !== null ? `${airStats.pressDelta > 0 ? '+' : ''}${airStats.pressDelta} hPa` : 'Estable'}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Bloque 2: Calidad de Aire y Partículas (ZH06) */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Wind size={16} style={{ color: '#FF9100' }} />
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                Calidad de Aire y Espectro de Partículas (ZH06)
+              </h4>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              
+              {/* PM2.5 Promedio & Pico */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM2.5 (Finas)</span>
+                  <div style={{ background: 'rgba(79, 172, 254, 0.1)', color: '#4FACFE', padding: '6px', borderRadius: '8px' }}>
+                    <Activity size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgPM25}
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}> µg/m³</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Pico: {airStats.maxPM25.toFixed(0)} µg/m³</span>
+                  <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.cleanPct}% Aire Limpio</span>
+                </div>
+              </div>
+
+              {/* PM1.0 Ultrafinas */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM1.0 (Ultrafinas)</span>
+                  <div style={{ background: 'rgba(224, 64, 251, 0.1)', color: '#E040FB', padding: '6px', borderRadius: '8px' }}>
+                    <Zap size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#E040FB', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgPM1}
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}> µg/m³</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Pico: {airStats.maxPM1.toFixed(0)} µg/m³</span>
+                  <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.safePM1Pct}% Rango Seguro</span>
+                </div>
+              </div>
+
+              {/* PM10 Gruesas */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>PM10 (Gruesas / Polvo)</span>
+                  <div style={{ background: 'rgba(0, 242, 254, 0.1)', color: '#00F2FE', padding: '6px', borderRadius: '8px' }}>
+                    <Wind size={18} />
+                  </div>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-display)' }}>
+                    {airStats.avgPM10}
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}> µg/m³</span>
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Pico: {airStats.maxPM10.toFixed(0)} µg/m³</span>
+                  <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.safePM10Pct}% Norma OMS</span>
+                </div>
+              </div>
+
+              {/* Ratios de Fracción de Partículas */}
+              <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Ratios de Espectro</span>
+                  <div style={{ background: 'rgba(255, 145, 0, 0.1)', color: '#FF9100', padding: '6px', borderRadius: '8px' }}>
+                    <BarChart2 size={18} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', margin: '4px 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ultrafino (PM1/PM10):</span>
+                    <strong style={{ color: '#E040FB', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>{airStats.ratioUF || 'N/A'}%</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Fino (PM2.5/PM10):</span>
+                    <strong style={{ color: '#4FACFE', fontSize: '0.9rem', fontFamily: 'var(--font-mono)' }}>{airStats.ratioFine || 'N/A'}%</strong>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Índice OMS:</span>
+                  <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.cleanPct}% Cumplimiento</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Bloque 3: Gráficos Analíticos */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
             
-            {/* Pie Chart: Air Quality States Distribution */}
+            {/* Gráfico 1: Patrón Horario Temperatura y Humedad */}
+            <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Patrón Horario de Temperatura y Humedad</h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Promedio diario por hora del clima interior.</p>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem' }}>
+                  <span style={{ color: '#FF7043', display: 'flex', alignItems: 'center', gap: '4px' }}>● Temp (°C)</span>
+                  <span style={{ color: '#2979FF', display: 'flex', alignItems: 'center', gap: '4px' }}>● Humedad (%)</span>
+                </div>
+              </div>
+
+              <div style={{ height: '240px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={barData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                    <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={9} tickLine={false} />
+                    <YAxis yAxisId="temp" stroke="#FF7043" fontSize={9} tickLine={false} domain={['auto', 'auto']} />
+                    <YAxis yAxisId="hum" orientation="right" stroke="#2979FF" fontSize={9} tickLine={false} domain={[0, 100]} />
+                    <Tooltip 
+                      contentStyle={{ background: '#101524', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.75rem' }} 
+                    />
+                    <Line yAxisId="temp" type="monotone" dataKey="Temperatura" stroke="#FF7043" strokeWidth={2.5} dot={false} connectNulls={true} />
+                    <Line yAxisId="hum" type="monotone" dataKey="Humedad" stroke="#2979FF" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={true} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Gráfico 2: Patrón Horario de PM2.5 */}
             <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Distribución de Estados de Aire</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Proporción de tiempo expuesto a cada diagnóstico en el rango seleccionado.</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Patrón Horario de Partículas PM2.5</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Promedio del nivel de partículas finas según la hora del día.</p>
+              </div>
+
+              <div style={{ height: '240px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
+                    <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={9} tickLine={false} />
+                    <YAxis stroke="var(--text-muted)" fontSize={9} tickLine={false} />
+                    <Tooltip 
+                      contentStyle={{ background: '#101524', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.75rem' }} 
+                      itemStyle={{ color: '#00F2FE' }}
+                    />
+                    <Bar dataKey="Promedio PM2.5" fill="#4FACFE" radius={[4, 4, 0, 0]}>
+                      {barData.map((entry, index) => {
+                        const val = entry['Promedio PM2.5'];
+                        let barColor = '#00E676';
+                        if (val > 12 && val <= 35) barColor = '#4FACFE';
+                        if (val > 35 && val <= 55) barColor = 'var(--color-warning)';
+                        if (val > 55) barColor = '#FF1744';
+                        return <Cell key={`cell-${index}`} fill={barColor} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Gráfico 3: Distribución de Estados de Aire */}
+            <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Distribución de Estados de Aire</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>Proporción de tiempo expuesto a cada diagnóstico en el rango seleccionado.</p>
               </div>
 
               {pieData.length === 0 ? (
@@ -1672,38 +2050,183 @@ void loop() {
               )}
             </div>
 
-            {/* Bar Chart: Hourly Pattern */}
-            <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Patrón Horario de PM2.5</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Promedio del nivel de partículas finas según la hora del día.</p>
-              </div>
+          </div>
 
-              <div style={{ height: '240px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
-                    <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={9} tickLine={false} />
-                    <YAxis stroke="var(--text-muted)" fontSize={9} tickLine={false} />
-                    <Tooltip 
-                      contentStyle={{ background: '#101524', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.75rem' }} 
-                      itemStyle={{ color: '#00F2FE' }}
-                    />
-                    <Bar dataKey="Promedio PM2.5" fill="#4FACFE" radius={[4, 4, 0, 0]}>
-                      {barData.map((entry, index) => {
-                        const val = entry['Promedio PM2.5'];
-                        let barColor = '#00E676';
-                        if (val > 12 && val <= 35) barColor = '#4FACFE';
-                        if (val > 35 && val <= 55) barColor = 'var(--color-warning)';
-                        if (val > 55) barColor = '#FF1744';
-                        return <Cell key={`cell-${index}`} fill={barColor} />;
-                      })}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+          {/* Bloque 4: Matriz de Resumen Analítico de Sensores */}
+          <div className="glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Table size={18} style={{ color: 'var(--color-primary)' }} />
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Matriz Comparativa de Sensores del Hogar</h3>
               </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Consolidado en ventana de {timeRange}h
+              </span>
             </div>
-            
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)' }}>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Sensor</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Hardware</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Lectura Actual</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Promedio</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Mínimo</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Máximo</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Oscilación / Rango</th>
+                    <th style={{ padding: '10px 12px', fontWeight: 600 }}>Estado / Confort</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Fila Temperatura */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Thermometer size={16} style={{ color: '#FF7043' }} /> Temperatura Interior
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: '#00F2FE', fontSize: '0.7rem' }}>DS18B20</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: tempSensor ? getTempColor(tempSensor.value) : '#fff' }}>
+                      {tempSensor ? `${tempSensor.value.toFixed(1)} °C` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgTemp !== 'N/A' ? `${airStats.avgTemp} °C` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minTemp !== 'N/A' ? `${airStats.minTemp} °C` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxTemp !== 'N/A' ? `${airStats.maxTemp} °C` : 'N/A'}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Δ {airStats.oscTemp} °C</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.comfortTempPct}% confortable</span>
+                    </td>
+                  </tr>
+
+                  {/* Fila Humedad */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Droplets size={16} style={{ color: '#2979FF' }} /> Humedad Relativa
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(41, 121, 255, 0.08)', color: '#2979FF', fontSize: '0.7rem' }}>BME280</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: humiditySensor ? getHumidityColor(humiditySensor.value) : '#fff' }}>
+                      {humiditySensor ? `${humiditySensor.value.toFixed(1)} %` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgHum !== 'N/A' ? `${airStats.avgHum} %` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minHum !== 'N/A' ? `${airStats.minHum} %` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxHum !== 'N/A' ? `${airStats.maxHum} %` : 'N/A'}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Δ {airStats.oscHum} %</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.comfortHumPct}% en rango óptimo</span>
+                    </td>
+                  </tr>
+
+                  {/* Fila Presión */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Gauge size={16} style={{ color: '#00E676' }} /> Presión Atmosférica
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 230, 118, 0.08)', color: '#00E676', fontSize: '0.7rem' }}>BME280</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: pressureSensor ? getPressureColor(pressureSensor.value) : '#fff' }}>
+                      {pressureSensor ? `${pressureSensor.value.toFixed(1)} hPa` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgPress !== 'N/A' ? `${airStats.avgPress} hPa` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minPress !== 'N/A' ? `${airStats.minPress} hPa` : 'N/A'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxPress !== 'N/A' ? `${airStats.maxPress} hPa` : 'N/A'}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Δ {airStats.oscPress} hPa</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: airStats.pressDelta && airStats.pressDelta > 0 ? '#00E676' : airStats.pressDelta && airStats.pressDelta < 0 ? '#FF1744' : 'var(--text-muted)', fontWeight: 600 }}>
+                        {airStats.pressDelta !== null ? `${airStats.pressDelta > 0 ? '+' : ''}${airStats.pressDelta} hPa (Tendencia)` : 'Estable'}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Fila PM2.5 */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Wind size={16} style={{ color: '#FF9100' }} /> PM2.5 (Finas)
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(255, 109, 0, 0.08)', color: '#FF6D00', fontSize: '0.7rem' }}>ZH06</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: pm25Sensor ? getPM25Status(pm25Sensor.value).color : '#fff' }}>
+                      {pm25Sensor ? `${pm25Sensor.value.toFixed(0)} µg/m³` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgPM25} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minPM25} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxPM25.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Pico: {airStats.maxPM25.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.cleanPct}% Aire Limpio (OMS)</span>
+                    </td>
+                  </tr>
+
+                  {/* Fila PM10 */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Gauge size={16} style={{ color: '#4FACFE' }} /> PM10 (Gruesas)
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: '#00F2FE', fontSize: '0.7rem' }}>ZH06</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: pm10Sensor ? getPM10Status(pm10Sensor.value).color : '#fff' }}>
+                      {pm10Sensor ? `${pm10Sensor.value.toFixed(0)} µg/m³` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgPM10} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minPM10} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxPM10.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Pico: {airStats.maxPM10.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.safePM10Pct}% Norma OMS</span>
+                    </td>
+                  </tr>
+
+                  {/* Fila PM1.0 */}
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                      <Zap size={16} style={{ color: '#E040FB' }} /> PM1.0 (Ultrafinas)
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      <span className="network-speed-badge-tx" style={{ background: 'rgba(224, 64, 251, 0.08)', color: '#E040FB', fontSize: '0.7rem' }}>ZH06</span>
+                    </td>
+                    <td style={{ padding: '12px', fontWeight: 700, color: pm1Sensor ? getPM1Status(pm1Sensor.value).color : '#fff' }}>
+                      {pm1Sensor ? `${pm1Sensor.value.toFixed(0)} µg/m³` : 'N/A'}
+                    </td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgPM1} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minPM1} µg/m³</td>
+                    <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxPM1.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Pico: {airStats.maxPM1.toFixed(0)} µg/m³</td>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ color: '#00E676', fontWeight: 600 }}>{airStats.safePM1Pct}% Rango Seguro</span>
+                    </td>
+                  </tr>
+
+                  {/* Fila Agua AC (si está activo o medido) */}
+                  {waterSensor && (
+                    <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: '#fff' }}>
+                        <Droplets size={16} style={{ color: '#00F2FE' }} /> Tanque Agua Balcón
+                      </td>
+                      <td style={{ padding: '12px' }}>
+                        <span className="network-speed-badge-tx" style={{ background: 'rgba(0, 242, 254, 0.08)', color: '#00F2FE', fontSize: '0.7rem' }}>HC-SR04</span>
+                      </td>
+                      <td style={{ padding: '12px', fontWeight: 700, color: '#00F2FE' }}>
+                        {waterSensor.value.toFixed(1)} %
+                      </td>
+                      <td style={{ padding: '12px', fontFamily: 'var(--font-mono)' }}>{airStats.avgWater !== null ? `${airStats.avgWater} %` : 'N/A'}</td>
+                      <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#00F2FE' }}>{airStats.minWater !== null ? `${airStats.minWater} %` : 'N/A'}</td>
+                      <td style={{ padding: '12px', fontFamily: 'var(--font-mono)', color: '#FF7043' }}>{airStats.maxWater !== null ? `${airStats.maxWater} %` : 'N/A'}</td>
+                      <td style={{ padding: '12px', color: 'var(--text-muted)' }}>Máx: {airStats.maxWater || 'N/A'} %</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{ color: waterSensor.value < 80 ? '#00E676' : '#FF1744', fontWeight: 600 }}>
+                          {waterSensor.value < 50 ? 'Nivel Seguro' : waterSensor.value < 80 ? 'Nivel Medio-Alto' : 'Atención Llenado'}
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
           
         </div>
