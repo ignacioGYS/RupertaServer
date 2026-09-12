@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sun, CloudSun, Cloud, CloudFog, CloudRain, CloudSnow, CloudLightning, 
-  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play, Clock, RefreshCw, Clock4
+  Thermometer, Wind, Droplets, MapPin, Search, Settings, Check, X, Map, Camera, Video, ExternalLink, Play, Clock, RefreshCw, Clock4, Maximize2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -436,11 +436,44 @@ export default function Weather() {
       <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px', marginTop: '20px' }}>
         {/* Mapa Animado de Vientos (Windy) */}
         <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Map size={18} style={{ color: '#00F2FE' }} />
-            Mapa Meteorológico en Vivo
-          </h3>
-          <div style={{ width: '100%', height: '220px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', marginTop: '16px', flex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Map size={18} style={{ color: '#00F2FE' }} />
+              Mapa Meteorológico en Vivo
+            </h3>
+            <a 
+              href={`https://www.windy.com/?${location.lat},${location.lon},10`} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              title="Abrir mapa en pantalla completa (nueva pestaña)"
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                width: '32px', 
+                height: '32px', 
+                borderRadius: '8px', 
+                background: 'rgba(255,255,255,0.05)', 
+                color: 'var(--text-secondary)', 
+                textDecoration: 'none',
+                transition: 'all 0.2s ease',
+                border: '1px solid rgba(255,255,255,0.05)'
+              }}
+              onMouseEnter={(e) => { 
+                e.currentTarget.style.color = '#00F2FE'; 
+                e.currentTarget.style.background = 'rgba(0,242,254,0.1)'; 
+                e.currentTarget.style.borderColor = 'rgba(0,242,254,0.3)'; 
+              }}
+              onMouseLeave={(e) => { 
+                e.currentTarget.style.color = 'var(--text-secondary)'; 
+                e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; 
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; 
+              }}
+            >
+              <Maximize2 size={16} />
+            </a>
+          </div>
+          <div style={{ width: '100%', height: '220px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)', flex: 1 }}>
             <iframe 
               width="100%" 
               height="100%" 

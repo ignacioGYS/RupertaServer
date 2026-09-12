@@ -186,8 +186,8 @@ function UpdateModal({ onClose, onConfirm, status, message }) {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0', gap: '16px' }}>
               <div className="spinner" style={{ width: '36px', height: '36px' }} />
               <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '0.88rem', fontWeight: 600, display: 'block' }}>Reconstruyendo contenedores...</span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>El monitor se desconectarÃ¡ pronto y se reconectarÃ¡ de forma automÃ¡tica.</span>
+                <span style={{ fontSize: '0.88rem', fontWeight: 600, display: 'block' }}>{message || 'Actualizando servidor...'}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>El monitor se desconectará durante el reinicio y se reconectará de forma automática.</span>
               </div>
             </div>
           )}
@@ -302,32 +302,65 @@ function App() {
 
   const handleUpdateConfirm = async () => {
     setUpdateStatus('updating');
+    setUpdateMessage('Iniciando actualización...');
     try {
       const res = await fetch('/api/system/update', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         setUpdateStatus('error');
-        setUpdateMessage(data.error || 'Error al iniciar actualizaciÃ³n');
-      } else {
-        let attempts = 0;
-        const checkOnline = setInterval(async () => {
-          attempts++;
-          try {
+        setUpdateMessage(data.error || 'Error al iniciar actualización');
+        return;
+      }
+
+      let restartingDetected = false;
+      let checkAttempts = 0;
+
+      const pollInterval = setInterval(async () => {
+        try {
+          if (!restartingDetected) {
+            const statusRes = await fetch('/api/system/update-status');
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              if (statusData.status === 'error') {
+                clearInterval(pollInterval);
+                setUpdateStatus('error');
+                setUpdateMessage(statusData.error || 'Error durante la actualización');
+                return;
+              }
+              if (statusData.step) {
+                setUpdateMessage(statusData.step);
+              }
+              if (statusData.status === 'restarting') {
+                restartingDetected = true;
+                setUpdateMessage('Reiniciando servidor... esperando reconexión...');
+              }
+            }
+          } else {
+            checkAttempts++;
             const check = await fetch('/api/connection-status');
             if (check.ok) {
-              clearInterval(checkOnline);
+              clearInterval(pollInterval);
               setUpdateStatus('success');
-              setUpdateMessage('Servidor actualizado con Ã©xito. Recargando aplicaciÃ³n...');
+              setUpdateMessage('Servidor actualizado con éxito. Recargando aplicación...');
               setTimeout(() => { window.location.reload(); }, 2000);
             }
-          } catch (_) {}
-          if (attempts > 60) {
-            clearInterval(checkOnline);
-            setUpdateStatus('error');
-            setUpdateMessage('El servidor tardÃ³ demasiado en responder.');
           }
-        }, 2000);
-      }
+        } catch (_) {
+          // Si falla la petición HTTP, significa que el contenedor de Docker se cayó por el reinicio
+          if (!restartingDetected) {
+            restartingDetected = true;
+            setUpdateMessage('Reiniciando servidor... esperando reconexión...');
+          } else {
+            checkAttempts++;
+          }
+        }
+
+        if (checkAttempts > 60) {
+          clearInterval(pollInterval);
+          setUpdateStatus('error');
+          setUpdateMessage('El servidor tardó demasiado en responder tras el reinicio.');
+        }
+      }, 2000);
     } catch (e) {
       setUpdateStatus('error');
       setUpdateMessage(e.message);

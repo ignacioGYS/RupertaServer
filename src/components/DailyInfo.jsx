@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw, Newspaper, Clock } from 'lucide-react';
+import { DollarSign, Bitcoin, Sun, Sunrise, Sunset, Navigation, RefreshCw, Newspaper, Clock, Maximize2 } from 'lucide-react';
 
 function getMoonPhase(date = new Date()) {
   const L = 29.530588853;
@@ -328,10 +328,43 @@ export default function DailyInfo() {
 
       {/* Tarjeta Mapa Tráfico */}
       <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: '400px' }}>
-        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '16px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Navigation size={18} style={{ color: '#FF3D00' }} />
-          Tráfico en Vivo (Waze)
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Navigation size={18} style={{ color: '#FF3D00' }} />
+            Tráfico en Vivo (Waze)
+          </h3>
+          <a 
+            href={`https://www.waze.com/live-map?lat=${location.lat}&lon=${location.lon}&zoom=14`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            title="Abrir mapa de Waze en pantalla completa (nueva pestaña)"
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '8px', 
+              background: 'rgba(255,255,255,0.05)', 
+              color: 'var(--text-secondary)', 
+              textDecoration: 'none',
+              transition: 'all 0.2s ease',
+              border: '1px solid rgba(255,255,255,0.05)'
+            }}
+            onMouseEnter={(e) => { 
+              e.currentTarget.style.color = '#FF3D00'; 
+              e.currentTarget.style.background = 'rgba(255,61,0,0.1)'; 
+              e.currentTarget.style.borderColor = 'rgba(255,61,0,0.3)'; 
+            }}
+            onMouseLeave={(e) => { 
+              e.currentTarget.style.color = 'var(--text-secondary)'; 
+              e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; 
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; 
+            }}
+          >
+            <Maximize2 size={16} />
+          </a>
+        </div>
         <div style={{ flex: 1, width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
           <iframe 
             src={`https://embed.waze.com/iframe?zoom=13&lat=${location.lat}&lon=${location.lon}&pin=1&desc=1`}

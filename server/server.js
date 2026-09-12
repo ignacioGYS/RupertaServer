@@ -1171,8 +1171,23 @@ app.get('/api/system/apt', async (req, res) => {
 
 
 
-// 20b. System Update API (pull/rebuild/up in background)
+let systemUpdateState = {
+  status: 'idle', // 'idle' | 'updating' | 'restarting' | 'error' | 'success'
+  step: '',
+  error: null,
+  timestamp: null
+};
+
+app.get('/api/system/update-status', (req, res) => {
+  res.json(systemUpdateState);
+});
+
+// 20b. System Update API (pull/rebuild/up in background with progress tracking)
 app.post('/api/system/update', async (req, res) => {
+  if (systemUpdateState.status === 'updating' || systemUpdateState.status === 'restarting') {
+    return res.status(409).json({ error: 'Ya hay una actualización en curso' });
+  }
+
   try {
     const findOutput = await sshManager.exec('find ~ -maxdepth 4 -name "RupertaServer" -type d | head -n 1');
     const remotePath = findOutput.trim();
@@ -1181,26 +1196,48 @@ app.post('/api/system/update', async (req, res) => {
     }
 
     console.log(`[System Update] Starting update in ${remotePath}`);
+    systemUpdateState = {
+      status: 'updating',
+      step: 'Iniciando actualización...',
+      error: null,
+      timestamp: Date.now()
+    };
 
-    // Respond immediately to the frontend to avoid connection drop / HTTP abort errors on compose restart
-    res.json({ success: true, message: 'Actualización iniciada. El servidor reconstruirá los contenedores y se reiniciará en unos segundos.' });
+    res.json({ success: true, message: 'Actualización iniciada' });
 
-    // Detached background update execution
+    // Detached background update execution with state tracking
     (async () => {
       try {
-        console.log('[System Update] Pulling latest code...');
-        await sshManager.exec(`cd ${remotePath} && git pull origin main`);
+        systemUpdateState.step = 'Descargando últimos cambios desde GitHub...';
+        console.log('[System Update] Fetching & resetting to origin/main...');
+        await sshManager.exec(`cd ${remotePath} && git fetch origin main && git reset --hard origin/main`);
+
+        systemUpdateState.step = 'Reconstruyendo contenedores Docker...';
         console.log('[System Update] Rebuilding containers...');
         await sshManager.exec(`cd ${remotePath} && docker compose build`);
+
+        systemUpdateState.status = 'restarting';
+        systemUpdateState.step = 'Reiniciando contenedores...';
         console.log('[System Update] Restarting container with detached nohup...');
-        // We use nohup with sleep to allow this SSH session to close cleanly before docker compose recreates the container
-        await sshManager.exec(`cd ${remotePath} && nohup sh -c "sleep 2 && docker compose up -d" >/dev/null 2>&1 &`);
+        await sshManager.exec(`cd ${remotePath} && nohup sh -c "sleep 2 && docker compose up -d" </dev/null >/dev/null 2>&1 &`);
         console.log('[System Update] Detached compose up command executed!');
       } catch (err) {
         console.error('[System Update] Failed:', err.message);
+        systemUpdateState = {
+          status: 'error',
+          step: 'Error durante la actualización',
+          error: err.message,
+          timestamp: Date.now()
+        };
       }
     })();
   } catch (err) {
+    systemUpdateState = {
+      status: 'error',
+      step: 'Error al iniciar actualización',
+      error: err.message,
+      timestamp: Date.now()
+    };
     res.status(500).json({ error: err.message });
   }
 });
@@ -2725,7 +2762,7 @@ app.get('/api/sensors/history', async (req, res) => {
   }
 });
 
-// Endpoint para estadísticas de máximos (24h, 7d y histórico) por sensor con sus respectivas fechas/horas
+// Endpoint para estadísticas de máximos y mínimos (24h, 7d y histórico) por sensor con sus respectivas fechas/horas
 app.get('/api/sensors/stats', async (req, res) => {
   try {
     const result = await query(`
@@ -2734,29 +2771,58 @@ app.get('/api/sensors/stats', async (req, res) => {
                ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
         FROM sensor_readings
       ),
-      m24h AS (
+      hist_min AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value ASC, timestamp DESC) as rn
+        FROM sensor_readings
+      ),
+      m24h_max AS (
         SELECT sensor_name, value, timestamp,
                ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
         FROM sensor_readings
         WHERE timestamp > NOW() - INTERVAL '24 hours'
       ),
-      m7d AS (
+      m24h_min AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value ASC, timestamp DESC) as rn
+        FROM sensor_readings
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+      ),
+      m7d_max AS (
         SELECT sensor_name, value, timestamp,
                ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value DESC, timestamp DESC) as rn
         FROM sensor_readings
         WHERE timestamp > NOW() - INTERVAL '7 days'
+      ),
+      m7d_min AS (
+        SELECT sensor_name, value, timestamp,
+               ROW_NUMBER() OVER (PARTITION BY sensor_name ORDER BY value ASC, timestamp DESC) as rn
+        FROM sensor_readings
+        WHERE timestamp > NOW() - INTERVAL '7 days'
       )
       SELECT 
-        h.sensor_name,
-        h.value as max_historic,
-        h.timestamp as time_historic,
-        m.value as max_24h,
-        m.timestamp as time_24h,
-        d.value as max_7d,
-        d.timestamp as time_7d
-      FROM (SELECT sensor_name, value, timestamp FROM hist_max WHERE rn = 1) h
-      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m24h WHERE rn = 1) m ON h.sensor_name = m.sensor_name
-      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m7d WHERE rn = 1) d ON h.sensor_name = d.sensor_name
+        h_max.sensor_name,
+        h_max.value as max_historic,
+        h_max.timestamp as time_historic,
+        h_max.timestamp as time_historic_max,
+        h_min.value as min_historic,
+        h_min.timestamp as time_historic_min,
+        m_max.value as max_24h,
+        m_max.timestamp as time_24h,
+        m_max.timestamp as time_24h_max,
+        m_min.value as min_24h,
+        m_min.timestamp as time_24h_min,
+        d_max.value as max_7d,
+        d_max.timestamp as time_7d,
+        d_max.timestamp as time_7d_max,
+        d_min.value as min_7d,
+        d_min.timestamp as time_7d_min
+      FROM (SELECT sensor_name, value, timestamp FROM hist_max WHERE rn = 1) h_max
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM hist_min WHERE rn = 1) h_min ON h_max.sensor_name = h_min.sensor_name
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m24h_max WHERE rn = 1) m_max ON h_max.sensor_name = m_max.sensor_name
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m24h_min WHERE rn = 1) m_min ON h_max.sensor_name = m_min.sensor_name
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m7d_max WHERE rn = 1) d_max ON h_max.sensor_name = d_max.sensor_name
+      LEFT JOIN (SELECT sensor_name, value, timestamp FROM m7d_min WHERE rn = 1) d_min ON h_max.sensor_name = d_min.sensor_name
     `);
     res.json({ stats: result.rows });
   } catch (error) {

@@ -90,11 +90,17 @@ export default function SensorDashboard() {
         (data.stats || []).forEach(s => {
           statsMap[s.sensor_name] = {
             max_24h: s.max_24h,
-            time_24h: s.time_24h,
+            time_24h: s.time_24h || s.time_24h_max,
+            min_24h: s.min_24h,
+            time_24h_min: s.time_24h_min,
             max_7d: s.max_7d,
-            time_7d: s.time_7d,
+            time_7d: s.time_7d || s.time_7d_max,
+            min_7d: s.min_7d,
+            time_7d_min: s.time_7d_min,
             max_historic: s.max_historic,
-            time_historic: s.time_historic
+            time_historic: s.time_historic || s.time_historic_max,
+            min_historic: s.min_historic,
+            time_historic_min: s.time_historic_min
           };
         });
         setStats(statsMap);
@@ -175,21 +181,101 @@ export default function SensorDashboard() {
     const s = stats[sensorName];
     if (!s) return null;
     return (
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '0.66rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ color: 'var(--text-secondary)', opacity: 0.7, fontSize: '0.64rem' }}>24h Máx</span>
-          <strong style={{ color: '#fff', fontSize: '0.72rem' }}>{s.max_24h !== null && s.max_24h !== undefined ? `${parseFloat(s.max_24h).toFixed(decimals)}${unit}` : 'N/A'}</strong>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.58rem', whiteSpace: 'nowrap' }}>{formatTime(s.time_24h)}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* Fila de Máximos */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.66rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#FF7043', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▲ 24h Máx
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.max_24h !== null && s.max_24h !== undefined ? `${parseFloat(s.max_24h).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_24h ? new Date(s.time_24h).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_24h)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#FF7043', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▲ 7d Máx
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.max_7d !== null && s.max_7d !== undefined ? `${parseFloat(s.max_7d).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_7d ? new Date(s.time_7d).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_7d)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#FF7043', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▲ Hist. Máx
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.max_historic !== null && s.max_historic !== undefined ? `${parseFloat(s.max_historic).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_historic ? new Date(s.time_historic).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_historic)}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ color: 'var(--text-secondary)', opacity: 0.7, fontSize: '0.64rem' }}>7d Máx</span>
-          <strong style={{ color: '#fff', fontSize: '0.72rem' }}>{s.max_7d !== null && s.max_7d !== undefined ? `${parseFloat(s.max_7d).toFixed(decimals)}${unit}` : 'N/A'}</strong>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.58rem', whiteSpace: 'nowrap' }}>{formatTime(s.time_7d)}</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ color: 'var(--text-secondary)', opacity: 0.7, fontSize: '0.64rem' }}>Hist. Máx</span>
-          <strong style={{ color: '#fff', fontSize: '0.72rem' }}>{s.max_historic !== null && s.max_historic !== undefined ? `${parseFloat(s.max_historic).toFixed(decimals)}${unit}` : 'N/A'}</strong>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.58rem', whiteSpace: 'nowrap' }}>{formatTime(s.time_historic)}</span>
+
+        {/* Fila de Mínimos */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.66rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#00F2FE', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▼ 24h Mín
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.min_24h !== null && s.min_24h !== undefined ? `${parseFloat(s.min_24h).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_24h_min ? new Date(s.time_24h_min).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_24h_min)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#00F2FE', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▼ 7d Mín
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.min_7d !== null && s.min_7d !== undefined ? `${parseFloat(s.min_7d).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_7d_min ? new Date(s.time_7d_min).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_7d_min)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+            <span style={{ color: '#00F2FE', opacity: 0.9, fontSize: '0.62rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '2px' }}>
+              ▼ Hist. Mín
+            </span>
+            <strong style={{ color: '#fff', fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+              {s.min_historic !== null && s.min_historic !== undefined ? `${parseFloat(s.min_historic).toFixed(decimals)}${unit}` : 'N/A'}
+            </strong>
+            <span 
+              title={s.time_historic_min ? new Date(s.time_historic_min).toLocaleString() : ''}
+              style={{ color: 'var(--text-muted)', fontSize: '0.56rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {formatTime(s.time_historic_min)}
+            </span>
+          </div>
         </div>
       </div>
     );
