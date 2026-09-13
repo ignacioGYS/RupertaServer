@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Folder, File, FileCode, FileText, FileArchive, ArrowLeft, ArrowRight,
   Download, Edit3, Trash2, Plus, RefreshCw, FolderPlus, Copy, Scissors,
-  ClipboardPaste, AlertTriangle, Check, X, Search, Grid, List,
+  ClipboardPaste, AlertTriangle, Check, Minus, X, Search, Grid, List,
   ChevronRight, Home, HardDrive, Upload, Image, Film,
   Music, Database, Package, Loader2
 } from 'lucide-react';
@@ -98,6 +98,16 @@ export default function FileExplorer() {
   const renameInputRef  = useRef(null);
   const addressInputRef = useRef(null);
   const explorerRef     = useRef(null);
+  const mainRef         = useRef(null);
+
+  // Marquee drag-selection state & refs
+  const [selectionBox, setSelectionBox] = useState(null);
+  const dragStartPos        = useRef({ x: 0, y: 0 });
+  const isMouseDown         = useRef(false);
+  const isSelecting         = useRef(false);
+  const initialSelected     = useRef(new Set());
+  const isCtrlOrShift       = useRef(false);
+  const justDragSelected    = useRef(false);
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
@@ -168,6 +178,7 @@ export default function FileExplorer() {
 
   const handleItemClick = (e, file) => {
     if (renaming.active) return;
+    if (justDragSelected.current) return;
     if (e.ctrlKey || e.metaKey) {
       setSelected(prev => {
         const next = new Set(prev);
@@ -184,6 +195,123 @@ export default function FileExplorer() {
     } else {
       setSelected(new Set([file.name]));
     }
+  };
+
+  const toggleItemSelect = (e, fileName) => {
+    e.stopPropagation();
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(fileName)) next.delete(fileName);
+      else next.add(fileName);
+      return next;
+    });
+  };
+
+  const allFilteredSelected = filteredFiles.length > 0 && filteredFiles.every(f => selected.has(f.name));
+  const someFilteredSelected = filteredFiles.some(f => selected.has(f.name)) && !allFilteredSelected;
+
+  const toggleSelectAll = (e) => {
+    e?.stopPropagation();
+    if (allFilteredSelected) {
+      clearSelection();
+    } else {
+      setSelected(new Set(filteredFiles.map(f => f.name)));
+    }
+  };
+
+  // ── Mouse Drag Selection (Marquee) ──────────────────────────────────────────
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return; // Left-click only
+    if (renaming.active) return;
+    // Don't start drag selection if clicking interactive controls
+    if (e.target.closest('button, input, textarea, a, .fe-rename-input, .fe-checkbox, .fe-checkbox-header, .fe-grid-checkbox, .fe-ctx-menu, .fe-modal-overlay')) {
+      return;
+    }
+
+    isMouseDown.current = true;
+    isSelecting.current = false;
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    const isMulti = e.ctrlKey || e.metaKey || e.shiftKey;
+    isCtrlOrShift.current = isMulti;
+    initialSelected.current = isMulti ? new Set(selected) : new Set();
+
+    const onMouseMove = (moveEvt) => {
+      if (!isMouseDown.current) return;
+      const dx = moveEvt.clientX - dragStartPos.current.x;
+      const dy = moveEvt.clientY - dragStartPos.current.y;
+
+      if (!isSelecting.current) {
+        if (Math.hypot(dx, dy) < 5) return;
+        isSelecting.current = true;
+      }
+
+      moveEvt.preventDefault();
+
+      const boxLeft = Math.min(dragStartPos.current.x, moveEvt.clientX);
+      const boxTop = Math.min(dragStartPos.current.y, moveEvt.clientY);
+      const boxRight = Math.max(dragStartPos.current.x, moveEvt.clientX);
+      const boxBottom = Math.max(dragStartPos.current.y, moveEvt.clientY);
+
+      setSelectionBox({
+        left: boxLeft,
+        top: boxTop,
+        width: boxRight - boxLeft,
+        height: boxBottom - boxTop,
+      });
+
+      // Auto-scroll main container near edges
+      if (mainRef.current) {
+        const mRect = mainRef.current.getBoundingClientRect();
+        const threshold = 40;
+        if (moveEvt.clientY < mRect.top + threshold) {
+          mainRef.current.scrollTop -= 14;
+        } else if (moveEvt.clientY > mRect.bottom - threshold) {
+          mainRef.current.scrollTop += 14;
+        }
+      }
+
+      // Check intersections with items having data-fe-name
+      if (mainRef.current) {
+        const items = mainRef.current.querySelectorAll('[data-fe-name]');
+        const touching = new Set();
+        items.forEach(el => {
+          const r = el.getBoundingClientRect();
+          const intersects = !(
+            r.right < boxLeft ||
+            r.left > boxRight ||
+            r.bottom < boxTop ||
+            r.top > boxBottom
+          );
+          if (intersects) {
+            const name = el.getAttribute('data-fe-name');
+            if (name) touching.add(name);
+          }
+        });
+
+        if (isCtrlOrShift.current) {
+          const combined = new Set(initialSelected.current);
+          touching.forEach(n => combined.add(n));
+          setSelected(combined);
+        } else {
+          setSelected(touching);
+        }
+      }
+    };
+
+    const onMouseUp = () => {
+      if (isSelecting.current) {
+        justDragSelected.current = true;
+        setTimeout(() => { justDragSelected.current = false; }, 80);
+      }
+      isMouseDown.current = false;
+      isSelecting.current = false;
+      setSelectionBox(null);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
   };
 
   const handleItemDoubleClick = (file) => {
@@ -691,9 +819,21 @@ export default function FileExplorer() {
 
         {/* Main pane */}
         <main
-          className={`fe-main ${dragOver ? 'fe-dragover' : ''}`}
+          ref={mainRef}
+          className={`fe-main ${dragOver ? 'fe-dragover' : ''} ${selectionBox ? 'fe-selecting' : ''}`}
+          onMouseDown={handleMouseDown}
           onContextMenu={handleBgContextMenu}
-          onClick={e => { if (e.target === e.currentTarget) clearSelection(); }}
+          onClick={e => {
+            if (justDragSelected.current) return;
+            if (
+              e.target === e.currentTarget ||
+              e.target.classList.contains('fe-list-body') ||
+              e.target.classList.contains('fe-grid-view') ||
+              e.target.classList.contains('fe-list-view')
+            ) {
+              clearSelection();
+            }
+          }}
         >
           {loading ? (
             <div className="fe-state-center"><Loader2 size={32} className="fe-spin" /><span>Cargando...</span></div>
@@ -711,6 +851,17 @@ export default function FileExplorer() {
           ) : view === 'list' ? (
             <div className="fe-list-view">
               <div className="fe-list-header">
+                <span className="fe-col-check">
+                  <button
+                    type="button"
+                    className={`fe-checkbox-header ${allFilteredSelected ? 'checked' : someFilteredSelected ? 'indeterminate' : ''}`}
+                    onClick={toggleSelectAll}
+                    title={allFilteredSelected ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                  >
+                    {allFilteredSelected && <Check size={11} strokeWidth={3} />}
+                    {someFilteredSelected && <Minus size={11} strokeWidth={3} />}
+                  </button>
+                </span>
                 <span className="fe-col-name">Nombre</span>
                 <span className="fe-col-size">Tamaño</span>
                 <span className="fe-col-perms">Permisos</span>
@@ -723,11 +874,22 @@ export default function FileExplorer() {
                   return (
                     <div
                       key={file.name}
+                      data-fe-name={file.name}
                       className={`fe-list-row ${isSelected ? 'selected' : ''} ${isCut ? 'fe-cut' : ''}`}
                       onClick={e => handleItemClick(e, file)}
                       onDoubleClick={() => handleItemDoubleClick(file)}
                       onContextMenu={e => handleContextMenu(e, file)}
                     >
+                      <span className="fe-col-check">
+                        <button
+                          type="button"
+                          className={`fe-checkbox ${isSelected ? 'checked' : ''}`}
+                          onClick={e => toggleItemSelect(e, file.name)}
+                          title={isSelected ? 'Deseleccionar' : 'Seleccionar'}
+                        >
+                          {isSelected && <Check size={11} strokeWidth={3} />}
+                        </button>
+                      </span>
                       <span className="fe-col-name">
                         <span className="fe-item-icon">{getFileIcon(file)}</span>
                         {renaming.active && renaming.original === file.name ? (
@@ -764,11 +926,20 @@ export default function FileExplorer() {
                 return (
                   <div
                     key={file.name}
+                    data-fe-name={file.name}
                     className={`fe-grid-item ${isSelected ? 'selected' : ''} ${isCut ? 'fe-cut' : ''}`}
                     onClick={e => handleItemClick(e, file)}
                     onDoubleClick={() => handleItemDoubleClick(file)}
                     onContextMenu={e => handleContextMenu(e, file)}
                   >
+                    <button
+                      type="button"
+                      className={`fe-grid-checkbox ${isSelected ? 'checked' : ''}`}
+                      onClick={e => toggleItemSelect(e, file.name)}
+                      title={isSelected ? 'Deseleccionar' : 'Seleccionar'}
+                    >
+                      {isSelected && <Check size={11} strokeWidth={3} />}
+                    </button>
                     <div className="fe-grid-icon">{getGridIcon(file)}</div>
                     {renaming.active && renaming.original === file.name ? (
                       <input
@@ -798,6 +969,18 @@ export default function FileExplorer() {
               <Upload size={40} />
               <span>Soltar para subir a<br /><strong>{currentPath}</strong></span>
             </div>
+          )}
+
+          {selectionBox && (
+            <div
+              className="fe-marquee-selection"
+              style={{
+                left: `${selectionBox.left}px`,
+                top: `${selectionBox.top}px`,
+                width: `${selectionBox.width}px`,
+                height: `${selectionBox.height}px`,
+              }}
+            />
           )}
         </main>
       </div>

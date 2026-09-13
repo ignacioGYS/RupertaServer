@@ -1396,7 +1396,7 @@ body {
 
 .fe-list-header {
   display: grid;
-  grid-template-columns: 1fr 80px 70px 140px;
+  grid-template-columns: 28px 1fr 80px 70px 140px;
   padding: 6px 16px;
   border-bottom: 1px solid var(--border-color);
   background: rgba(0,0,0,0.2);
@@ -1416,7 +1416,7 @@ body {
 
 .fe-list-row {
   display: grid;
-  grid-template-columns: 1fr 80px 70px 140px;
+  grid-template-columns: 28px 1fr 80px 70px 140px;
   padding: 5px 16px;
   align-items: center;
   cursor: pointer;
@@ -1437,9 +1437,65 @@ body {
 @media (max-width: 900px) {
   .fe-list-header,
   .fe-list-row {
-    grid-template-columns: 1fr 80px 140px;
+    grid-template-columns: 28px 1fr 80px 140px;
   }
   .fe-col-perms { display: none; }
+}
+
+.fe-col-check {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.fe-checkbox,
+.fe-checkbox-header {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: rgba(0, 0, 0, 0.3);
+  color: #0b132b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.fe-checkbox {
+  opacity: 0;
+}
+
+.fe-list-row:hover .fe-checkbox,
+.fe-checkbox.checked,
+.fe-list-row.selected .fe-checkbox {
+  opacity: 1;
+}
+
+.fe-checkbox:hover,
+.fe-checkbox-header:hover {
+  border-color: var(--color-primary);
+  background: rgba(0, 242, 254, 0.15);
+}
+
+.fe-checkbox.checked,
+.fe-checkbox-header.checked,
+.fe-checkbox-header.indeterminate {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #0d1117;
+}
+
+.fe-checkbox-header {
+  opacity: 0.5;
+}
+
+.fe-list-header:hover .fe-checkbox-header,
+.fe-checkbox-header.checked,
+.fe-checkbox-header.indeterminate {
+  opacity: 1;
 }
 
 .fe-col-name {
@@ -1474,6 +1530,7 @@ body {
 }
 
 .fe-grid-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1492,6 +1549,43 @@ body {
 }
 .fe-grid-item.fe-cut { opacity: 0.45; }
 
+.fe-grid-checkbox {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  background: rgba(13, 17, 23, 0.85);
+  backdrop-filter: blur(4px);
+  color: #0d1117;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: all var(--transition-fast);
+  z-index: 2;
+}
+
+.fe-grid-item:hover .fe-grid-checkbox,
+.fe-grid-checkbox.checked,
+.fe-grid-item.selected .fe-grid-checkbox {
+  opacity: 1;
+}
+
+.fe-grid-checkbox:hover {
+  border-color: var(--color-primary);
+  background: rgba(0, 242, 254, 0.2);
+}
+
+.fe-grid-checkbox.checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
 .fe-grid-icon { display: flex; align-items: center; justify-content: center; }
 .fe-grid-name {
   font-size: 0.75rem;
@@ -1503,6 +1597,21 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.3;
+}
+
+/* ── Selection Marquee Box ────────────────────────────────────── */
+.fe-marquee-selection {
+  position: fixed;
+  border: 1.5px solid rgba(0, 242, 254, 0.85);
+  background: rgba(0, 242, 254, 0.14);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.fe-main.fe-selecting {
+  user-select: none;
 }
 
 /* ── File Icons ───────────────────────────────────────────────── */
