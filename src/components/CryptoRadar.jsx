@@ -53,19 +53,6 @@ function sliceStats(closes, days) {
   };
 }
 
-// Un punto por día (último close) para que el RSI sea realmente diario,
-// aunque CoinGecko a veces entregue series horarias.
-function toDailyCloses(rawPrices) {
-  const byDay = new Map();
-  for (const [timestamp, price] of rawPrices) {
-    const day = new Date(timestamp).toISOString().slice(0, 10);
-    byDay.set(day, { timestamp, price });
-  }
-  return [...byDay.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, point]) => point);
-}
-
 // ── RSI sobre velas diarias (Wilder, 14 períodos) ───────────────────────────
 function calculateRSI(prices, period = 14) {
   if (!prices || prices.length <= period) return 50;
@@ -93,6 +80,59 @@ function calculateRSI(prices, period = 14) {
   return Math.round((100 - (100 / (1 + rs))) * 10) / 10;
 }
 
+function calculateEMA(values, period) {
+  if (!values || values.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = values.slice(0, period).reduce((sum, v) => sum + v, 0) / period;
+  for (let i = period; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+function calculateBollinger(values, period = 20, mult = 2) {
+  if (!values || values.length < period) return null;
+  const slice = values.slice(-period);
+  const mid = slice.reduce((sum, v) => sum + v, 0) / slice.length;
+  const variance = slice.reduce((sum, v) => sum + (v - mid) ** 2, 0) / slice.length;
+  const std = Math.sqrt(variance);
+  return { mid, upper: mid + mult * std, lower: mid - mult * std };
+}
+
+function volumeRatio(volumes, period = 20) {
+  if (!volumes || volumes.length < period + 1) return null;
+  const last = volumes[volumes.length - 1];
+  const avg = volumes.slice(-period - 1, -1).reduce((sum, v) => sum + v, 0) / period;
+  if (avg <= 0 || !Number.isFinite(last)) return null;
+  return last / avg;
+}
+
+function toDailySeries(rawPrices, rawVolumes = []) {
+  const byDay = new Map();
+  for (const [timestamp, price] of rawPrices) {
+    const day = new Date(timestamp).toISOString().slice(0, 10);
+    byDay.set(day, { timestamp, price, volume: 0 });
+  }
+  for (const [timestamp, volume] of rawVolumes) {
+    const day = new Date(timestamp).toISOString().slice(0, 10);
+    const row = byDay.get(day);
+    if (row) row.volume = volume;
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, point]) => point);
+}
+
+function dimensionBadge(level, detail) {
+  const styles = {
+    buy: { level: 'buy', label: 'A favor', color: '#00E676', bg: 'rgba(0, 230, 118, 0.12)' },
+    caution: { level: 'caution', label: 'En contra', color: '#FF1744', bg: 'rgba(255, 23, 68, 0.12)' },
+    neutral: { level: 'neutral', label: 'Neutral', color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.12)' },
+    na: { level: 'na', label: 'N/D', color: '#64748B', bg: 'rgba(100, 116, 139, 0.12)' }
+  };
+  return { ...(styles[level] || styles.na), detail };
+}
+
 function fngWeightFor(coinId) {
   if (coinId === 'bitcoin') return 1;
   if (coinId === 'ethereum') return 0.5;
@@ -112,7 +152,15 @@ function evaluateOpportunity({
   currentPrice,
   coinId,
   coinName,
-  btcChange24h
+  btcChange24h,
+  ema50,
+  ema200,
+  bbLower,
+  bbUpper,
+  volumeRatio: volRatio,
+  mvrv,
+  fundingRate,
+  oiChangePct
 }) {
   if (coinId === 'tether') {
     return {
@@ -127,6 +175,12 @@ function evaluateOpportunity({
         color: '#26A17B',
         bg: 'rgba(38, 161, 123, 0.15)',
         actionText: 'No hay zona de compra. Usalo para preservar dólares, no para “entrar barato”.'
+      },
+      dimensions: {
+        technical: dimensionBadge('na', 'No aplica a stablecoins'),
+        onchain: dimensionBadge('na', 'No aplica a stablecoins'),
+        derivatives: dimensionBadge('na', 'No aplica a stablecoins'),
+        sentiment: dimensionBadge('na', 'No aplica a stablecoins')
       }
     };
   }
@@ -178,7 +232,84 @@ function evaluateOpportunity({
     reasons.push('Máximos locales de 14 días: esperar un retroceso antes de agregar.');
   }
 
-  // 4. Fear & Greed: peso pleno en BTC, reducido en alts (el índice es de Bitcoin)
+  // 4. EMA 50/200
+  if (Number.isFinite(ema50) && Number.isFinite(ema200) && currentPrice > 0) {
+    if (currentPrice < ema200 && ema50 < ema200) {
+      score -= 10;
+      reasons.push(`Precio bajo EMA 200 ($${formatUsd(ema200)}): tendencia de largo plazo aún bajista.`);
+    } else if (currentPrice < ema50 && currentPrice > ema200) {
+      score += 6;
+      reasons.push('Pullback sobre EMA 200 y bajo EMA 50: retroceso típico, no ruptura de tendencia.');
+    } else if (currentPrice > ema50 && ema50 > ema200 && rsi > 65) {
+      score -= 6;
+      reasons.push('Tendencia alcista pero extendida sobre EMA 50: mejor esperar un retroceso a la media.');
+    }
+  }
+
+  // 5. Bollinger (20, 2) y volumen
+  if (Number.isFinite(bbLower) && Number.isFinite(bbUpper) && currentPrice > 0) {
+    if (currentPrice <= bbLower) {
+      score += 10;
+      reasons.push('Precio en o bajo la banda inferior de Bollinger (20): sobreventa estadística.');
+    } else if (currentPrice >= bbUpper) {
+      score -= 10;
+      reasons.push('Precio en o sobre la banda superior de Bollinger: extensión alcista.');
+    }
+    if (Number.isFinite(volRatio) && volRatio >= 1.5 && currentPrice <= bbLower) {
+      score += 5;
+      reasons.push(`Volumen ${volRatio.toFixed(1)}x la media en el piso de Bollinger: posible capitulación.`);
+    } else if (Number.isFinite(volRatio) && volRatio >= 1.5 && currentPrice >= bbUpper) {
+      score -= 5;
+      reasons.push(`Volumen ${volRatio.toFixed(1)}x en máximos de Bollinger: euforia de corto plazo.`);
+    }
+  }
+
+  // 6. On-chain MVRV (BTC/ETH)
+  if (Number.isFinite(mvrv)) {
+    if (mvrv < 1) {
+      score += 16;
+      reasons.push(`MVRV ${mvrv.toFixed(2)} < 1: cotiza bajo el costo realizado. Zona histórica de acumulación.`);
+    } else if (mvrv < 1.2) {
+      score += 10;
+      reasons.push(`MVRV ${mvrv.toFixed(2)}: todavía barato vs valor realizado.`);
+    } else if (mvrv > 3.5) {
+      score -= 16;
+      reasons.push(`MVRV ${mvrv.toFixed(2)}: zona de ciclo alto. Poco margen de seguridad on-chain.`);
+    } else if (mvrv > 2.4) {
+      score -= 8;
+      reasons.push(`MVRV ${mvrv.toFixed(2)} elevado: el mercado está caro vs el costo agregado.`);
+    }
+  }
+
+  // 7. Derivados: funding y variación de OI
+  if (Number.isFinite(fundingRate)) {
+    const fp = fundingRate * 100;
+    if (fundingRate <= -0.0003) {
+      score += 10;
+      reasons.push(`Funding muy negativo (${fp.toFixed(4)}%): exceso de cortos, posible squeeze alcista.`);
+    } else if (fundingRate <= -0.0001) {
+      score += 5;
+      reasons.push(`Funding negativo (${fp.toFixed(4)}%): sesgo bajista en derivados, no euforia.`);
+    } else if (fundingRate >= 0.0005) {
+      score -= 10;
+      reasons.push(`Funding alto (${fp.toFixed(4)}%): longs pagando de más, mercado sobrecalentado.`);
+    } else if (fundingRate >= 0.0002) {
+      score -= 5;
+      reasons.push(`Funding positivo elevado (${fp.toFixed(4)}%): congestión de largos.`);
+    }
+  }
+
+  if (Number.isFinite(oiChangePct) && Number.isFinite(fundingRate)) {
+    if (oiChangePct > 5 && fundingRate < 0 && change24h < 0) {
+      score += 6;
+      reasons.push(`OI +${oiChangePct.toFixed(1)}% con funding negativo y precio cayendo: se agregan cortos.`);
+    } else if (oiChangePct > 5 && fundingRate > 0.0001 && change24h > 3) {
+      score -= 6;
+      reasons.push(`OI +${oiChangePct.toFixed(1)}% con funding positivo en rally: crowded trade de largos.`);
+    }
+  }
+
+  // 8. Fear & Greed: peso pleno en BTC, reducido en alts (el índice es de Bitcoin)
   const fngVal = fearAndGreed?.value ? parseInt(fearAndGreed.value, 10) : 50;
   const fngW = fngWeightFor(coinId);
   if (fngW > 0) {
@@ -286,7 +417,62 @@ function evaluateOpportunity({
     };
   }
 
-  return { score, reasons, verdict };
+  let technicalLevel = 'neutral';
+  if (rsi <= 35 || currentPrice <= bbLower || range90Pct <= 30) technicalLevel = 'buy';
+  if (rsi >= 70 || (Number.isFinite(bbUpper) && currentPrice >= bbUpper) || range90Pct >= 85) technicalLevel = 'caution';
+  if (Number.isFinite(ema50) && Number.isFinite(ema200) && currentPrice < ema200 && ema50 < ema200 && rsi > 45) {
+    technicalLevel = 'caution';
+  }
+
+  const technicalDetail = Number.isFinite(ema50) && Number.isFinite(ema200)
+    ? `RSI ${rsi} · EMA50 $${formatUsd(ema50)} · EMA200 $${formatUsd(ema200)}`
+    : `RSI ${rsi} · rango 90d ${Number.isFinite(range90Pct) ? range90Pct.toFixed(0) : '--'}%`;
+
+  let onchainLevel = 'na';
+  let onchainDetail = coinId === 'ergo'
+    ? 'MVRV no está en APIs públicas para Ergo'
+    : 'MVRV no disponible ahora';
+  if (Number.isFinite(mvrv)) {
+    onchainDetail = `MVRV ${mvrv.toFixed(2)} (market / realized cap)`;
+    if (mvrv < 1.2) onchainLevel = 'buy';
+    else if (mvrv > 2.4) onchainLevel = 'caution';
+    else onchainLevel = 'neutral';
+  }
+
+  let derivLevel = 'na';
+  let derivDetail = (coinId === 'bitcoin' || coinId === 'ethereum')
+    ? 'Funding/OI de Binance no disponible ahora'
+    : 'Sin futuros líquidos en Binance para esta moneda';
+  if (Number.isFinite(fundingRate)) {
+    const fp = fundingRate * 100;
+    derivDetail = `Funding ${fp >= 0 ? '+' : ''}${fp.toFixed(4)}%${Number.isFinite(oiChangePct) ? ` · OI 24h ${oiChangePct >= 0 ? '+' : ''}${oiChangePct.toFixed(1)}%` : ''}`;
+    if (fundingRate <= -0.0001) derivLevel = 'buy';
+    else if (fundingRate >= 0.0002) derivLevel = 'caution';
+    else derivLevel = 'neutral';
+  }
+
+  let sentimentLevel = 'neutral';
+  let sentimentDetail = 'Fear & Greed no disponible';
+  if (fearAndGreed?.value) {
+    const fngVal = parseInt(fearAndGreed.value, 10);
+    sentimentDetail = coinId === 'bitcoin'
+      ? `${fearAndGreed.value_classification} (${fngVal})`
+      : `Índice de BTC: ${fearAndGreed.value_classification} (${fngVal})`;
+    if (fngVal <= 25) sentimentLevel = 'buy';
+    else if (fngVal >= 75) sentimentLevel = 'caution';
+  }
+
+  return {
+    score,
+    reasons,
+    verdict,
+    dimensions: {
+      technical: dimensionBadge(technicalLevel, technicalDetail),
+      onchain: dimensionBadge(onchainLevel, onchainDetail),
+      derivatives: dimensionBadge(derivLevel, derivDetail),
+      sentiment: dimensionBadge(sentimentLevel, sentimentDetail)
+    }
+  };
 }
 
 function RangeBar({ label, pct, min, max }) {
@@ -335,6 +521,19 @@ function RangeBar({ label, pct, min, max }) {
   );
 }
 
+function DimensionCard({ title, dim }) {
+  if (!dim) return null;
+  return (
+    <div style={{ background: dim.bg, padding: '12px', borderRadius: '10px', border: `1px solid ${dim.color}33` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{title}</span>
+        <span style={{ fontSize: '0.68rem', fontWeight: 800, color: dim.color }}>{dim.label}</span>
+      </div>
+      <span style={{ fontSize: '0.75rem', color: '#fff', lineHeight: 1.4, display: 'block' }}>{dim.detail}</span>
+    </div>
+  );
+}
+
 const EMPTY_HISTORY = {
   rsi: 50,
   change7d: 0,
@@ -344,7 +543,12 @@ const EMPTY_HISTORY = {
   min90: 0,
   max90: 0,
   range14Pct: 50,
-  range90Pct: 50
+  range90Pct: 50,
+  ema50: null,
+  ema200: null,
+  bbLower: null,
+  bbUpper: null,
+  volumeRatio: null
 };
 
 const DEFAULT_HOLDINGS = {
@@ -437,6 +641,7 @@ export default function CryptoRadar() {
   const [draftHoldings, setDraftHoldings] = useState(null);
 
   const [dcaUsd, setDcaUsd] = useState('100');
+  const [marketExtras, setMarketExtras] = useState(null);
   const selectedCoinIdRef = useRef(selectedCoinId);
   selectedCoinIdRef.current = selectedCoinId;
 
@@ -525,6 +730,7 @@ export default function CryptoRadar() {
       }
 
       await fetchHistoricalChart(selectedCoinIdRef.current);
+      fetchMarketExtras();
 
       setLastUpdated(new Date());
     } catch (err) {
@@ -536,28 +742,49 @@ export default function CryptoRadar() {
     }
   };
 
-  // days=91 fuerza velas diarias en CoinGecko (≤90 días viene horario)
+  const fetchMarketExtras = async () => {
+    try {
+      const res = await fetch('/api/crypto/market-extras');
+      if (!res.ok) return;
+      const json = await res.json();
+      setMarketExtras(json);
+    } catch (e) {
+      console.warn('Error fetching market extras:', e);
+    }
+  };
+
+  // days=365 da velas diarias y alcanza para EMA 200; si falla, cae a 91.
   const fetchHistoricalChart = async (coinId) => {
     if (coinId === 'tether') return;
     try {
-      const chartRes = await fetch(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=91`
+      let chartRes = await fetch(
+        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=365`
       );
+      if (!chartRes.ok) {
+        chartRes = await fetch(
+          `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=91`
+        );
+      }
       if (!chartRes.ok) return;
       const chartJson = await chartRes.json();
       const rawPrices = chartJson?.prices;
       if (!rawPrices?.length) return;
 
-      const daily = toDailyCloses(rawPrices);
+      const daily = toDailySeries(rawPrices, chartJson.total_volumes || []);
       const dailyCloses = daily.map(d => d.price);
+      const dailyVolumes = daily.map(d => d.volume);
       const rsiValue = calculateRSI(dailyCloses, 14);
       const stats14 = sliceStats(dailyCloses, 14);
-      const stats90 = sliceStats(dailyCloses, dailyCloses.length);
+      const stats90 = sliceStats(dailyCloses, 90);
       const currentClose = dailyCloses[dailyCloses.length - 1];
       const sevenAgo = dailyCloses[Math.max(0, dailyCloses.length - 8)];
       const change7d = sevenAgo > 0 ? ((currentClose - sevenAgo) / sevenAgo) * 100 : 0;
+      const ema50 = calculateEMA(dailyCloses, 50);
+      const ema200 = calculateEMA(dailyCloses, 200);
+      const bb = calculateBollinger(dailyCloses, 20, 2);
+      const volRatio = volumeRatio(dailyVolumes, 20);
 
-      const formattedData = daily.map(({ timestamp, price }) => {
+      const formattedData = daily.slice(-90).map(({ timestamp, price }) => {
         const date = new Date(timestamp);
         return {
           date: `${date.getDate()}/${date.getMonth() + 1}`,
@@ -578,7 +805,12 @@ export default function CryptoRadar() {
           min90: stats90.min,
           max90: stats90.max,
           range14Pct: percentileInRange(currentClose, stats14.min, stats14.max),
-          range90Pct: percentileInRange(currentClose, stats90.min, stats90.max)
+          range90Pct: percentileInRange(currentClose, stats90.min, stats90.max),
+          ema50,
+          ema200,
+          bbLower: bb?.lower ?? null,
+          bbUpper: bb?.upper ?? null,
+          volumeRatio: volRatio
         }
       }));
 
@@ -705,14 +937,15 @@ export default function CryptoRadar() {
     if (!historyReady) {
       return {
         score: null,
-        reasons: ['Sincronizando velas diarias de 90 días para RSI y rangos.'],
+        reasons: ['Sincronizando velas diarias y métricas de zona de entrada.'],
         verdict: {
           level: 'neutral',
           label: 'Cargando...',
           color: '#94A3B8',
           bg: 'rgba(148, 163, 184, 0.12)',
           actionText: 'Esperá a que llegue el histórico antes de leer el veredicto.'
-        }
+        },
+        dimensions: null
       };
     }
     return evaluateOpportunity({
@@ -726,13 +959,26 @@ export default function CryptoRadar() {
       currentPrice: activeCoinPrice,
       coinId: selectedCoinId,
       coinName: activeCoinMeta.name,
-      btcChange24h
+      btcChange24h,
+      ema50: activeCoinHistory.ema50,
+      ema200: activeCoinHistory.ema200,
+      bbLower: activeCoinHistory.bbLower,
+      bbUpper: activeCoinHistory.bbUpper,
+      volumeRatio: activeCoinHistory.volumeRatio,
+      mvrv: marketExtras?.[selectedCoinId]?.mvrv,
+      fundingRate: marketExtras?.[selectedCoinId]?.fundingRate,
+      oiChangePct: marketExtras?.[selectedCoinId]?.oiChangePct
     });
   }, [
     activeCoinHistory.rsi,
     activeCoinHistory.change7d,
     activeCoinHistory.range14Pct,
     activeCoinHistory.range90Pct,
+    activeCoinHistory.ema50,
+    activeCoinHistory.ema200,
+    activeCoinHistory.bbLower,
+    activeCoinHistory.bbUpper,
+    activeCoinHistory.volumeRatio,
     activeCoin24hChange,
     fearAndGreed,
     activeHolding.avgBuyPrice,
@@ -740,6 +986,7 @@ export default function CryptoRadar() {
     selectedCoinId,
     activeCoinMeta.name,
     btcChange24h,
+    marketExtras,
     historyReady
   ]);
 
@@ -1231,6 +1478,15 @@ export default function CryptoRadar() {
             </div>
           )}
 
+          {opportunityAnalysis.dimensions && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+              <DimensionCard title="Técnico" dim={opportunityAnalysis.dimensions.technical} />
+              <DimensionCard title="On-chain" dim={opportunityAnalysis.dimensions.onchain} />
+              <DimensionCard title="Derivados" dim={opportunityAnalysis.dimensions.derivatives} />
+              <DimensionCard title="Sentimiento" dim={opportunityAnalysis.dimensions.sentiment} />
+            </div>
+          )}
+
           <div style={{ 
             background: 'rgba(255,255,255,0.03)', 
             border: '1px solid rgba(255,255,255,0.07)', 
@@ -1313,11 +1569,40 @@ export default function CryptoRadar() {
                   </div>
                 )}
               </div>
+
+              {(Number.isFinite(activeCoinHistory.ema50) || Number.isFinite(activeCoinHistory.volumeRatio)) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '12px' }}>
+                  {Number.isFinite(activeCoinHistory.ema50) && (
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block' }}>EMA 50</span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: activeCoinPrice >= activeCoinHistory.ema50 ? '#00E676' : '#FF1744' }}>
+                        ${formatUsd(activeCoinHistory.ema50)}
+                      </span>
+                    </div>
+                  )}
+                  {Number.isFinite(activeCoinHistory.ema200) && (
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block' }}>EMA 200</span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: activeCoinPrice >= activeCoinHistory.ema200 ? '#00E676' : '#FF1744' }}>
+                        ${formatUsd(activeCoinHistory.ema200)}
+                      </span>
+                    </div>
+                  )}
+                  {Number.isFinite(activeCoinHistory.volumeRatio) && (
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'block' }}>Volumen vs 20d</span>
+                      <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                        {activeCoinHistory.volumeRatio.toFixed(1)}x
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
           <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-            Esto es un filtro de zona (rango, RSI diario, tu costo y contexto de BTC), no una orden de compra ni asesoramiento financiero.
+            Esto es un filtro de zona (técnico, on-chain, derivados y sentimiento), no una orden de compra ni asesoramiento financiero. No hay ejecución automática.
           </p>
 
         </div>
@@ -1330,7 +1615,7 @@ export default function CryptoRadar() {
                 {selectedCoinId === 'tether' ? 'Tether no usa gráfico técnico' : 'Evolución de precio (90 días)'}
               </h3>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                {selectedCoinId === 'tether' ? 'Precio anclado al dólar' : `${activeCoinMeta.name} · velas diarias en USD`}
+                {selectedCoinId === 'tether' ? 'Precio anclado al dólar' : `${activeCoinMeta.name} · velas diarias · EMA sobre 365d`}
               </span>
             </div>
 

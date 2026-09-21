@@ -12,6 +12,7 @@ import busboy from 'busboy';
 import { sshManager } from './sshClient.js';
 import { config } from './config.js';
 import { initializeDb, query } from './db.js';
+import { getCryptoMarketExtras } from './cryptoExtras.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +71,15 @@ app.get('/api/connection-status', async (req, res) => {
     res.json({ connected: true, host: config.ssh.host, username: config.ssh.username });
   } catch (err) {
     res.json({ connected: false, error: err.message, host: config.ssh.host });
+  }
+});
+
+app.get('/api/crypto/market-extras', async (req, res) => {
+  try {
+    const data = await getCryptoMarketExtras();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'No se pudieron obtener funding, OI ni MVRV' });
   }
 });
 
