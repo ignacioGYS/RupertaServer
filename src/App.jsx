@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun, Droplet, LayoutGrid } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun, Droplet, LayoutGrid, Coins } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -16,6 +16,7 @@ import SidebarWeatherWidget from './components/SidebarWeatherWidget';
 import Weather from './components/Weather';
 import DailyInfo from './components/DailyInfo';
 import SmartApps from './components/SmartApps';
+import CryptoRadar from './components/CryptoRadar';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -377,6 +378,7 @@ function App() {
 
   const menuItems = [
     { category: 'Resumen', id: 'dashboard',  label: 'Panel Control',      shortLabel: 'Panel',      icon: <Activity /> },
+    { category: 'Resumen', id: 'crypto',     label: 'Cripto Radar',       shortLabel: 'Cripto',     icon: <Coins /> },
     { category: 'Resumen', id: 'dailyinfo',  label: 'Info Diaria',         shortLabel: 'Diaria',     icon: <Lightbulb /> },
     
     { category: 'Sistema', id: 'docker',     label: 'Docker',              shortLabel: 'Docker',     icon: <Layers /> },
@@ -397,6 +399,7 @@ function App() {
 
   const components = {
     dashboard:  <Dashboard />,
+    crypto:     <CryptoRadar />,
     docker:     <DockerManager />,
     processes:  <ProcessManager />,
     hardware:   <HardwareInfo />,
@@ -414,6 +417,7 @@ function App() {
 
   const viewMeta = {
     dashboard:  { title: 'Panel de Control',       subtitle: 'Resumen de rendimiento y estado del sistema en tiempo real' },
+    crypto:     { title: 'Cripto Radar & Asesor Inteligente', subtitle: 'Evaluador de compra (RSI + Sentimiento), cotizaciones y billetera Ergo segura' },
     docker:     { title: 'Contenedores Docker',    subtitle: 'Monitoreo y administración de servicios dockerizados' },
     processes:  { title: 'Procesos Activos',       subtitle: 'Administración de tareas y carga en segundo plano' },
     hardware:   { title: 'Hardware del Servidor',  subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' },
