@@ -417,7 +417,7 @@ function App() {
 
   const viewMeta = {
     dashboard:  { title: 'Panel de Control',       subtitle: 'Resumen de rendimiento y estado del sistema en tiempo real' },
-    crypto:     { title: 'Cripto Radar & Asesor Inteligente', subtitle: 'Evaluador de compra (RSI + Sentimiento), cotizaciones y billetera Ergo segura' },
+    crypto:     { title: 'Cripto Radar & Asesor Inteligente', subtitle: 'Zona de entrada (RSI diario, rango 90d, tu costo y contexto BTC) y billetera Ergo' },
     docker:     { title: 'Contenedores Docker',    subtitle: 'Monitoreo y administración de servicios dockerizados' },
     processes:  { title: 'Procesos Activos',       subtitle: 'Administración de tareas y carga en segundo plano' },
     hardware:   { title: 'Hardware del Servidor',  subtitle: 'Detección de GPU, CPU, RAM, placa base, discos y más' },
