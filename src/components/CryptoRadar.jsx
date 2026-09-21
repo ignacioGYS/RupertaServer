@@ -8,7 +8,8 @@ import {
   Sparkles, 
   AlertCircle, 
   ArrowUpRight, 
-  ArrowDownRight, 
+  ArrowDownRight,
+  ArrowLeftRight,
   ExternalLink, 
   Copy, 
   Check, 
@@ -152,6 +153,7 @@ function evaluateOpportunity({
   currentPrice,
   coinId,
   coinName,
+  coinSymbol,
   btcChange24h,
   ema50,
   ema200,
@@ -160,7 +162,8 @@ function evaluateOpportunity({
   volumeRatio: volRatio,
   mvrv,
   fundingRate,
-  oiChangePct
+  oiChangePct,
+  min90
 }) {
   if (coinId === 'tether') {
     return {
@@ -176,12 +179,13 @@ function evaluateOpportunity({
         bg: 'rgba(38, 161, 123, 0.15)',
         actionText: 'No hay zona de compra. Usalo para preservar dólares, no para “entrar barato”.'
       },
-      dimensions: {
+        dimensions: {
         technical: dimensionBadge('na', 'No aplica a stablecoins'),
         onchain: dimensionBadge('na', 'No aplica a stablecoins'),
         derivatives: dimensionBadge('na', 'No aplica a stablecoins'),
         sentiment: dimensionBadge('na', 'No aplica a stablecoins')
-      }
+      },
+      rotation: null
     };
   }
 
@@ -462,10 +466,49 @@ function evaluateOpportunity({
     else if (fngVal >= 75) sentimentLevel = 'caution';
   }
 
+  const dropToEma = Number.isFinite(ema50) && currentPrice > ema50
+    ? ((currentPrice - ema50) / currentPrice) * 100
+    : null;
+  const dropToFloor = Number.isFinite(min90) && currentPrice > min90
+    ? ((currentPrice - min90) / currentPrice) * 100
+    : null;
+
+  let rotation;
+  if (score < 40) {
+    const slicePct = range90Pct >= 90 ? 30 : range90Pct >= 70 ? 20 : 15;
+    rotation = {
+      level: 'to_usdt',
+      label: `Zona para aparcar ~${slicePct}% en USDT`,
+      color: '#FF9100',
+      bg: 'rgba(255, 145, 0, 0.12)',
+      slicePct,
+      actionText: `No sabemos si baja mañana. El filtro está extendido, así que el riesgo/beneficio favorece pasar una parte de ${coinName} a USDT — nunca todo, por si sigue subiendo.`
+    };
+  } else if (score >= 60) {
+    rotation = {
+      level: 'to_coin',
+      label: `Zona para recomprar ${coinSymbol} con USDT`,
+      color: '#00E676',
+      bg: 'rgba(0, 230, 118, 0.12)',
+      slicePct: 0,
+      actionText: `Si aparcaste dólares, este es el lado de recompra: el filtro favorece volver a ${coinName}, no seguir 100% en USDT.`
+    };
+  } else {
+    rotation = {
+      level: 'hold',
+      label: 'Mantener el mix',
+      color: '#94A3B8',
+      bg: 'rgba(148, 163, 184, 0.12)',
+      slicePct: 0,
+      actionText: `Sin extremo claro. Rotar ahora es puro timing. Esperá techo (aparcar) o piso (recomprar) de rango.`
+    };
+  }
+
   return {
     score,
     reasons,
     verdict,
+    rotation: { ...rotation, dropToEma, dropToFloor, ema50, min90 },
     dimensions: {
       technical: dimensionBadge(technicalLevel, technicalDetail),
       onchain: dimensionBadge(onchainLevel, onchainDetail),
@@ -641,6 +684,8 @@ export default function CryptoRadar() {
   const [draftHoldings, setDraftHoldings] = useState(null);
 
   const [dcaUsd, setDcaUsd] = useState('100');
+  const [rotatePct, setRotatePct] = useState('25');
+  const [dipPct, setDipPct] = useState('15');
   const [marketExtras, setMarketExtras] = useState(null);
   const selectedCoinIdRef = useRef(selectedCoinId);
   selectedCoinIdRef.current = selectedCoinId;
@@ -945,7 +990,8 @@ export default function CryptoRadar() {
           bg: 'rgba(148, 163, 184, 0.12)',
           actionText: 'Esperá a que llegue el histórico antes de leer el veredicto.'
         },
-        dimensions: null
+        dimensions: null,
+        rotation: null
       };
     }
     return evaluateOpportunity({
@@ -959,6 +1005,7 @@ export default function CryptoRadar() {
       currentPrice: activeCoinPrice,
       coinId: selectedCoinId,
       coinName: activeCoinMeta.name,
+      coinSymbol: activeCoinMeta.symbol,
       btcChange24h,
       ema50: activeCoinHistory.ema50,
       ema200: activeCoinHistory.ema200,
@@ -967,7 +1014,8 @@ export default function CryptoRadar() {
       volumeRatio: activeCoinHistory.volumeRatio,
       mvrv: marketExtras?.[selectedCoinId]?.mvrv,
       fundingRate: marketExtras?.[selectedCoinId]?.fundingRate,
-      oiChangePct: marketExtras?.[selectedCoinId]?.oiChangePct
+      oiChangePct: marketExtras?.[selectedCoinId]?.oiChangePct,
+      min90: activeCoinHistory.min90
     });
   }, [
     activeCoinHistory.rsi,
@@ -985,9 +1033,11 @@ export default function CryptoRadar() {
     activeCoinPrice,
     selectedCoinId,
     activeCoinMeta.name,
+    activeCoinMeta.symbol,
     btcChange24h,
     marketExtras,
-    historyReady
+    historyReady,
+    activeCoinHistory.min90
   ]);
 
   const portfolioSummary = useMemo(() => {
@@ -1029,6 +1079,33 @@ export default function CryptoRadar() {
       priceDiffPct
     };
   }, [selectedCoinId, activeCoinPrice, holdings, dcaUsd]);
+
+  const rotationSim = useMemo(() => {
+    if (selectedCoinId === 'tether' || activeCoinPrice <= 0) return null;
+    const coins = Number(activeHolding.amount) || 0;
+    const sellShare = Math.max(0, Math.min(100, parseFloat(rotatePct) || 0)) / 100;
+    const dip = Math.max(0, Math.min(80, parseFloat(dipPct) || 0)) / 100;
+    if (coins <= 0 || sellShare <= 0) return { needsHoldings: true };
+
+    const soldCoins = coins * sellShare;
+    const usdt = soldCoins * activeCoinPrice;
+    const rebuyPrice = activeCoinPrice * (1 - dip);
+    if (rebuyPrice <= 0) return null;
+    const boughtBack = usdt / rebuyPrice;
+    const extraCoins = boughtBack - soldCoins;
+
+    return {
+      needsHoldings: false,
+      soldCoins,
+      usdt,
+      rebuyPrice,
+      boughtBack,
+      extraCoins,
+      extraPct: soldCoins > 0 ? (extraCoins / soldCoins) * 100 : 0
+    };
+  }, [selectedCoinId, activeCoinPrice, activeHolding.amount, rotatePct, dipPct]);
+
+  const rotation = opportunityAnalysis.rotation;
 
   const inputStyle = {
     width: '100%',
@@ -1914,6 +1991,191 @@ export default function CryptoRadar() {
         )}
 
       </div>
+
+      {selectedCoinId !== 'tether' && rotation && (
+        <div className="glass-card" style={{ padding: '22px', border: `1px solid ${rotation.color}44`, background: rotation.bg }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: `${rotation.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: rotation.color }}>
+                <ArrowLeftRight size={18} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                  Rotación {activeCoinMeta.symbol} ↔ USDT
+                </h3>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  No predice el día de la baja. Marca si conviene aparcar una parte o recomprar
+                </span>
+              </div>
+            </div>
+            <div style={{
+              padding: '6px 14px',
+              borderRadius: '20px',
+              background: 'rgba(0,0,0,0.25)',
+              border: `1px solid ${rotation.color}55`,
+              color: rotation.color,
+              fontWeight: 700,
+              fontSize: '0.82rem'
+            }}>
+              {rotation.label}
+            </div>
+          </div>
+
+          <p style={{ margin: '0 0 16px', fontSize: '0.88rem', color: '#fff', lineHeight: 1.5 }}>
+            {rotation.actionText}
+          </p>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+            {Number.isFinite(rotation.dropToEma) && (
+              <button
+                onClick={() => setDipPct(String(Math.round(rotation.dropToEma)))}
+                style={{
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Hasta EMA 50: −{rotation.dropToEma.toFixed(0)}% (${formatUsd(rotation.ema50)})
+              </button>
+            )}
+            {Number.isFinite(rotation.dropToFloor) && (
+              <button
+                onClick={() => setDipPct(String(Math.round(rotation.dropToFloor)))}
+                style={{
+                  background: 'rgba(0,0,0,0.25)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  color: '#fff',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Hasta piso 90d: −{rotation.dropToFloor.toFixed(0)}% (${formatUsd(rotation.min90)})
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+                ¿Qué % de tu {activeCoinMeta.symbol} aparcarías en USDT?
+              </label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {['15', '20', '25', '30'].map(preset => (
+                  <button
+                    key={preset}
+                    onClick={() => setRotatePct(preset)}
+                    style={{
+                      background: rotatePct === preset ? rotation.color : 'rgba(255,255,255,0.06)',
+                      color: rotatePct === preset ? '#080B11' : 'var(--text-secondary)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {preset}%
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  value={rotatePct}
+                  onChange={(e) => setRotatePct(e.target.value)}
+                  style={{ width: '72px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', padding: '8px 10px', color: '#fff', fontWeight: 700 }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+                Si después baja este % y recomprás
+              </label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {['10', '15', '20', '30'].map(preset => (
+                  <button
+                    key={preset}
+                    onClick={() => setDipPct(preset)}
+                    style={{
+                      background: dipPct === preset ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
+                      color: dipPct === preset ? '#080B11' : 'var(--text-secondary)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    −{preset}%
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  value={dipPct}
+                  onChange={(e) => setDipPct(e.target.value)}
+                  style={{ width: '72px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', padding: '8px 10px', color: '#fff', fontWeight: 700 }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {rotationSim?.needsHoldings && (
+            <p style={{ margin: '14px 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Cargá tu cantidad de {activeCoinMeta.symbol} arriba para ver cuántas monedas extra te quedarían.
+            </p>
+          )}
+
+          {rotationSim && !rotationSim.needsHoldings && (
+            <div style={{
+              marginTop: '16px',
+              background: 'rgba(0,0,0,0.28)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '12px',
+              padding: '14px 18px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: '12px'
+            }}>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block' }}>Vendés ahora</span>
+                <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
+                  {rotationSim.soldCoins.toLocaleString('en-US', { maximumFractionDigits: 3 })} {activeCoinMeta.symbol}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>≈ ${formatUsd(rotationSim.usdt)} USDT</span>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block' }}>Recompra a</span>
+                <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>${formatUsd(rotationSim.rebuyPrice)}</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>−{dipPct}% vs hoy</span>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block' }}>Volverías a tener</span>
+                <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#00E676' }}>
+                  {rotationSim.boughtBack.toLocaleString('en-US', { maximumFractionDigits: 3 })} {activeCoinMeta.symbol}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#00E676', display: 'block' }}>
+                  +{rotationSim.extraCoins.toLocaleString('en-US', { maximumFractionDigits: 3 })} extra ({rotationSim.extraPct.toFixed(0)}%)
+                </span>
+              </div>
+            </div>
+          )}
+
+          <p style={{ margin: '14px 0 0', fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+            Si en vez de bajar sigue subiendo, esa parte en USDT no participa del rally. Por eso el máximo sugerido es ~30%, no el 100%.
+          </p>
+        </div>
+      )}
 
       {selectedCoinId !== 'tether' && (
         <div className="glass-card" style={{ padding: '22px' }}>
