@@ -1655,6 +1655,21 @@ body {
 }
 .fe-state-error { color: var(--color-danger); }
 
+.fe-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 23, 68, 0.12);
+  border: 1px solid rgba(255, 23, 68, 0.35);
+  color: #ff8a9a;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.fe-error-banner span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
 /* ── Drag overlay ─────────────────────────────────────────────── */
 .fe-main.fe-dragover { border: 2px dashed var(--color-primary); }
 
@@ -1905,6 +1920,12 @@ body {
   font-family: var(--font-sans);
 }
 .fe-btn-danger:hover { background: rgba(255,23,68,0.3); transform: translateY(-1px); }
+.fe-btn-danger:disabled,
+.fe-btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
 
 /* ── Editor Overlay ───────────────────────────────────────────── */
 .fe-editor-overlay {

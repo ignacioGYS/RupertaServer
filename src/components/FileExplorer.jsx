@@ -89,7 +89,7 @@ export default function FileExplorer() {
   const [ctxMenu, setCtxMenu]           = useState({ visible: false, x: 0, y: 0, file: null });
   const [renaming, setRenaming]         = useState({ active: false, name: '', original: '' });
   const [editor, setEditor]             = useState({ open: false, filePath: '', fileName: '', content: '', saving: false, loading: false });
-  const [deleteModal, setDeleteModal]   = useState({ open: false, paths: [], names: [] });
+  const [deleteModal, setDeleteModal]   = useState({ open: false, paths: [], names: [], dirs: [], busy: false });
   const [dragOver, setDragOver]         = useState(false);
   const { addUploads, updateUpload, removeUploads } = useUploads();
   const [createModal, setCreateModal]   = useState({ open: false, type: null, value: '' });
@@ -445,34 +445,55 @@ export default function FileExplorer() {
 
   // ── Delete ──────────────────────────────────────────────────────────────────
 
+  const closeDeleteModal = () => setDeleteModal({ open: false, paths: [], names: [], dirs: [], busy: false });
+
   const triggerDelete = () => {
     const sel = selected.size > 0 ? [...selected] : (ctxMenu.file ? [ctxMenu.file.name] : []);
     if (!sel.length) return;
     const paths = sel.map(name => joinPath(currentPath, name));
-    setDeleteModal({ open: true, paths, names: sel });
+    const dirs = sel.map(name => !!files.find(f => f.name === name)?.isDirectory);
+    setDeleteModal({ open: true, paths, names: sel, dirs, busy: false });
     setCtxMenu(m => ({ ...m, visible: false }));
   };
 
   const confirmDelete = async () => {
+    if (deleteModal.busy) return;
+    setDeleteModal(m => ({ ...m, busy: true }));
+    const removed = [];
+    const errors = [];
     try {
       for (let i = 0; i < deleteModal.paths.length; i++) {
         const filePath = deleteModal.paths[i];
-        const file = files.find(f => f.name === deleteModal.names[i]);
-        const res = await fetch('/api/sftp/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filePath, isDirectory: file?.isDirectory || false })
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'No se pudo eliminar el elemento');
+        const name = deleteModal.names[i];
+        const isDirectory = deleteModal.dirs[i] || false;
+        try {
+          const res = await fetch('/api/sftp/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: filePath, isDirectory })
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || 'No se pudo eliminar el elemento');
+          }
+          removed.push(name);
+          setFiles(prev => prev.filter(f => f.name !== name));
+          setSelected(prev => {
+            const next = new Set(prev);
+            next.delete(name);
+            return next;
+          });
+        } catch (e) {
+          errors.push(`${name}: ${e.message}`);
         }
       }
-      fetchDirectory(currentPath, false);
-    } catch (e) {
-      alert(`Error al eliminar: ${e.message}`);
     } finally {
-      setDeleteModal({ open: false, paths: [], names: [] });
+      closeDeleteModal();
+      fetchDirectory(currentPath, false);
+      if (errors.length) {
+        const ok = removed.length ? `\nYa se eliminaron: ${removed.join(', ')}` : '';
+        alert(`Error al eliminar:${ok}\n${errors.join('\n')}`);
+      }
     }
   };
 
@@ -835,9 +856,16 @@ export default function FileExplorer() {
             }
           }}
         >
-          {loading ? (
+          {error && files.length > 0 && (
+            <div className="fe-error-banner">
+              <AlertTriangle size={14} />
+              <span>{error}</span>
+              <button className="fe-btn-primary" onClick={() => fetchDirectory(currentPath, false)}>Reintentar</button>
+            </div>
+          )}
+          {loading && files.length === 0 ? (
             <div className="fe-state-center"><Loader2 size={32} className="fe-spin" /><span>Cargando...</span></div>
-          ) : error ? (
+          ) : error && files.length === 0 ? (
             <div className="fe-state-center fe-state-error">
               <AlertTriangle size={32} /><span>{error}</span>
               <button className="fe-btn-primary" onClick={() => fetchDirectory(currentPath, false)}>Reintentar</button>
@@ -1085,16 +1113,22 @@ export default function FileExplorer() {
 
       {/* Delete Modal */}
       {deleteModal.open && (
-        <div className="fe-modal-bg" onClick={() => setDeleteModal({ open: false, paths: [], names: [] })}>
+        <div className="fe-modal-bg" onClick={() => { if (!deleteModal.busy) closeDeleteModal(); }}>
           <div className="fe-modal" onClick={e => e.stopPropagation()}>
             <div className="fe-modal-header">
               <Trash2 size={20} className="fe-modal-icon-danger" />
               <h3>¿Eliminar {deleteModal.names.length > 1 ? `${deleteModal.names.length} elementos` : `"${deleteModal.names[0]}"`}?</h3>
             </div>
-            <p className="fe-modal-msg">Esta acción es permanente e irreversible.</p>
+            <p className="fe-modal-msg">
+              {deleteModal.busy
+                ? 'Eliminando... las carpetas grandes pueden tardar un poco.'
+                : 'Esta acción es permanente e irreversible.'}
+            </p>
             <div className="fe-modal-footer">
-              <button className="fe-btn-secondary" onClick={() => setDeleteModal({ open: false, paths: [], names: [] })}>Cancelar</button>
-              <button className="fe-btn-danger" onClick={confirmDelete}>Eliminar</button>
+              <button className="fe-btn-secondary" onClick={closeDeleteModal} disabled={deleteModal.busy}>Cancelar</button>
+              <button className="fe-btn-danger" onClick={confirmDelete} disabled={deleteModal.busy}>
+                {deleteModal.busy ? 'Eliminando...' : 'Eliminar'}
+              </button>
             </div>
           </div>
         </div>

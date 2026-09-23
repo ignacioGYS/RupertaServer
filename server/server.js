@@ -844,18 +844,15 @@ app.get('/api/hardware-info', async (req, res) => {
 app.get('/api/sftp/list', async (req, res) => {
   const { path = '.' } = req.query;
   try {
-    // Get real absolute path first (use shellQuote for safe single-quote wrapping)
-    const absolutePath = await sshManager.exec(`cd ${shellQuote(path)} && pwd`);
-    const files = await sshManager.sftpList(absolutePath);
-    
-    // Sort directories first, then files alphabetically
+    const { currentPath, files } = await sshManager.sftpList(path);
+
     files.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     });
 
-    res.json({ currentPath: absolutePath, files });
+    res.json({ currentPath, files });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -940,7 +937,7 @@ app.post('/api/sftp/upload', (req, res) => {
         const writeStream = sftp.createWriteStream(remotePath);
         fileStream.pipe(writeStream);
         writeStream.on('close', () => resolve({ name: safeName, path: remotePath }));
-        writeStream.on('error', (err) => { sshManager.sftpSession = null; reject(err); });
+        writeStream.on('error', (err) => { sshManager.dropSftp(); reject(err); });
         fileStream.on('error', reject);
       });
     })();
@@ -988,7 +985,7 @@ app.post('/api/sftp/upload-single', (req, res) => {
         const writeStream = sftp.createWriteStream(destFullPath);
         fileStream.pipe(writeStream);
         writeStream.on('close', () => resolve({ path: destFullPath }));
-        writeStream.on('error', (err) => { sshManager.sftpSession = null; reject(err); });
+        writeStream.on('error', (err) => { sshManager.dropSftp(); reject(err); });
         fileStream.on('error', reject);
       });
     })();
