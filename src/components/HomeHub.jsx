@@ -151,8 +151,15 @@ export default function HomeHub() {
       <div className="glass-card home-block">
         <div className="home-block-head">
           <h3>Escenas</h3>
-          <span>{lights.total ? `${lights.total} luces` : 'Configuralas en Luces / Red'}</span>
+          <span>{lights.total ? `${lights.total} luces` : 'Buscando en la red…'}</span>
         </div>
+        {!!lights.items?.length && (
+          <div className="home-light-chips">
+            {lights.items.map(l => (
+              <span key={l.mac || l.ip} className={l.state ? 'on' : ''}>{l.name || l.ip}</span>
+            ))}
+          </div>
+        )}
         <div className="home-scene-row">
           {SCENES.map(sc => {
             const Icon = sc.icon;

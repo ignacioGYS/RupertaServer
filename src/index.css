@@ -3280,6 +3280,18 @@ section:has(.fe-root) {
 .home-block-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .home-block-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 1rem; }
 .home-block-head span { font-size: 0.75rem; color: var(--text-muted); }
+.home-light-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.home-light-chips span {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+}
+.home-light-chips span.on {
+  background: rgba(255, 214, 0, 0.16);
+  color: #FFD600;
+}
 .home-scene-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .home-scene-btn {
   display: inline-flex; align-items: center; gap: 6px;

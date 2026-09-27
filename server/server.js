@@ -2987,9 +2987,14 @@ wss.on('connection', async (ws, request) => {
 
 // ── Home hub: Plex, qBit, luces, sensores, WOL ───────────────────────────────
 
-async function probeHomeLights() {
+let homeLightsCache = { at: 0, items: [] };
+
+async function probeHomeLights({ force = false } = {}) {
+  if (!force && homeLightsCache.items.length && Date.now() - homeLightsCache.at < 20000) {
+    return homeLightsCache.items;
+  }
   const devices = await listLightDevices();
-  return Promise.all(devices.map(async (d) => {
+  const probed = await Promise.all(devices.map(async (d) => {
     if (!d.ip) return { ...d, state: false, online: false };
     try {
       if (d.lightType && d.lightType !== 'wiz') {
@@ -2997,11 +3002,14 @@ async function probeHomeLights() {
       }
       const resp = await wizUdp(d.ip, { method: 'getPilot', params: {} });
       const r = resp?.result || {};
-      return { ...d, state: !!r.state, brightness: r.dimming, online: true };
+      return { ...d, state: !!r.state, brightness: r.dimming, online: true, isLight: true };
     } catch {
       return { ...d, state: false, online: false };
     }
   }));
+  const lights = probed.filter(d => d.online || d.isLight);
+  homeLightsCache = { at: Date.now(), items: lights };
+  return lights;
 }
 
 app.get('/api/home/summary', async (req, res) => {
@@ -3080,8 +3088,9 @@ app.post('/api/home/lights/scene', async (req, res) => {
     return res.status(400).json({ error: 'Escena inválida' });
   }
   try {
-    const lights = await listLightDevices();
+    const lights = await probeHomeLights({ force: true });
     const withIp = lights.filter(l => l.ip);
+    homeLightsCache = { at: 0, items: [] };
     await Promise.all(withIp.map(async (l) => {
       try {
         const isWiz = !l.lightType || l.lightType === 'wiz';

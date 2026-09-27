@@ -276,35 +276,60 @@ export async function getHomeSensors() {
   }
 }
 
+function isRealLanIp(ip) {
+  if (!ip) return false;
+  if (!ip.startsWith('192.168.') && !ip.startsWith('10.')) return false;
+  const last = Number(String(ip).split('.').pop());
+  return last !== 0 && last !== 1 && last !== 255;
+}
+
 export async function listLightDevices() {
-  let rows = [];
+  const dbByMac = {};
   try {
-    const db = await query(`SELECT mac, custom_name, light_type, device_config FROM local_devices WHERE is_light = true`);
-    rows = db.rows || [];
+    const db = await query(`SELECT mac, custom_name, is_light, light_type, device_config FROM local_devices`);
+    for (const row of db.rows || []) {
+      const mac = (row.mac || '').toLowerCase();
+      if (mac) dbByMac[mac] = row;
+    }
   } catch {
-    return [];
+    /* la DB es opcional: igual sondeamos ARP como en Luces */
   }
-  if (!rows.length) return [];
 
   let neigh = '';
   try {
     neigh = await sshManager.exec('ip neigh show');
   } catch {
-    return rows.map(r => ({ mac: r.mac, name: r.custom_name, lightType: r.light_type, ip: null }));
+    neigh = '';
   }
 
-  const macToIp = {};
+  const byMac = new Map();
+  const upsert = (mac, ip) => {
+    const key = (mac || '').toLowerCase();
+    if (!key) return;
+    const row = dbByMac[key] || {};
+    const prev = byMac.get(key) || {};
+    byMac.set(key, {
+      mac: key,
+      ip: ip || prev.ip || null,
+      name: row.custom_name || prev.name || ip || key,
+      lightType: row.light_type || prev.lightType || 'wiz',
+      deviceConfig: row.device_config || prev.deviceConfig || {},
+      isLight: !!(row.is_light || prev.isLight)
+    });
+  };
+
   for (const line of neigh.split('\n')) {
+    if (/FAILED|INCOMPLETE/i.test(line)) continue;
     const ip = line.match(/^(\d+\.\d+\.\d+\.\d+)/)?.[1];
-    const mac = line.match(/([0-9a-f]{2}(?::[0-9a-f]{2}){5})/i)?.[1];
-    if (ip && mac) macToIp[mac.toLowerCase()] = ip;
+    const mac = line.match(/lladdr\s+([0-9a-f:]+)/i)?.[1];
+    if (!ip || !mac || !isRealLanIp(ip)) continue;
+    upsert(mac, ip);
   }
 
-  return rows.map(r => ({
-    mac: r.mac,
-    name: r.custom_name || r.mac,
-    lightType: r.light_type || 'wiz',
-    deviceConfig: r.device_config || {},
-    ip: macToIp[(r.mac || '').toLowerCase()] || null
-  }));
+  for (const [mac, row] of Object.entries(dbByMac)) {
+    if (!row.is_light || byMac.has(mac)) continue;
+    upsert(mac, null);
+  }
+
+  return [...byMac.values()];
 }
