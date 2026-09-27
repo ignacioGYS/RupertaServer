@@ -5,7 +5,7 @@ import { query } from './db.js';
 const PLEX_PREFS = '/home/nacho/docker/plex/config/Library/Application Support/Plex Media Server/Preferences.xml';
 
 let plexTokenCache = { token: null, at: 0 };
-let qbitCookie = { sid: null, at: 0 };
+let qbitCookie = { header: null, at: 0 };
 
 function lanHost() {
   const h = config.ssh.host || '127.0.0.1';
@@ -128,7 +128,7 @@ async function qbitLogin() {
     err.code = 'NO_PASSWORD';
     throw err;
   }
-  if (qbitCookie.sid && Date.now() - qbitCookie.at < 30 * 60 * 1000) return qbitCookie.sid;
+  if (qbitCookie.header && Date.now() - qbitCookie.at < 30 * 60 * 1000) return qbitCookie.header;
 
   const res = await fetch(`${qbitBase()}/api/v2/auth/login`, {
     method: 'POST',
@@ -140,24 +140,25 @@ async function qbitLogin() {
     signal: AbortSignal.timeout(8000)
   });
   const text = (await res.text()).trim();
-  if (!res.ok || text.toLowerCase() !== 'ok.') {
-    throw new Error(text || `qBit login HTTP ${res.status}`);
-  }
   const cookies = typeof res.headers.getSetCookie === 'function'
     ? res.headers.getSetCookie()
     : [res.headers.get('set-cookie')].filter(Boolean);
-  const sid = cookies.join(';').match(/SID=([^;]+)/)?.[1];
-  if (!sid) throw new Error('qBit no devolvió cookie SID');
-  qbitCookie = { sid, at: Date.now() };
-  return sid;
+  const sidPair = cookies.join(';').match(/((?:QBT_SID_\d+|SID))=([^;]+)/);
+  const bodyOk = !text || /^ok\.?$/i.test(text);
+  if (!res.ok || !bodyOk || !sidPair) {
+    throw new Error(text || `qBit login HTTP ${res.status}`);
+  }
+  const header = `${sidPair[1]}=${sidPair[2]}`;
+  qbitCookie = { header, at: Date.now() };
+  return header;
 }
 
 async function qbitApi(pathname, { method = 'GET', body } = {}) {
-  const sid = await qbitLogin();
+  const cookie = await qbitLogin();
   const res = await fetch(`${qbitBase()}${pathname}`, {
     method,
     headers: {
-      Cookie: `SID=${sid}`,
+      Cookie: cookie,
       Referer: qbitBase(),
       ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {})
     },
@@ -165,7 +166,7 @@ async function qbitApi(pathname, { method = 'GET', body } = {}) {
     signal: AbortSignal.timeout(8000)
   });
   if (res.status === 403 || res.status === 401) {
-    qbitCookie = { sid: null, at: 0 };
+    qbitCookie = { header: null, at: 0 };
     throw new Error(`qBit HTTP ${res.status}`);
   }
   const ct = res.headers.get('content-type') || '';
