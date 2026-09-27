@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Lightbulb, RefreshCw, Wifi, WifiOff, Loader, Palette, Thermometer } from 'lucide-react';
+import { Lightbulb, RefreshCw, Wifi, WifiOff, Loader, Palette, Thermometer, Clapperboard, Moon } from 'lucide-react';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -462,6 +462,22 @@ export default function Lights() {
     setLights(prev => prev.map(l => ({ ...l, state: turnOn, loading: false })));
   };
 
+  const applyScene = async (scene) => {
+    setLights(prev => prev.map(l => ({ ...l, loading: true })));
+    try {
+      const res = await fetch('/api/home/lights/scene', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scene })
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      await discoverLights();
+    } catch (e) {
+      alert(e.message || 'No se pudo aplicar la escena');
+      setLights(prev => prev.map(l => ({ ...l, loading: false })));
+    }
+  };
+
   const onCount  = lights.filter(l => l.state).length;
   const offCount = lights.filter(l => !l.state).length;
 
@@ -502,6 +518,44 @@ export default function Lights() {
           >
             <Lightbulb size={14} color={onCount === lights.length ? 'var(--text-muted)' : '#FFD600'} />
             Todas ON
+          </button>
+          <button
+            onClick={() => applyScene('cine')}
+            disabled={discovering || lights.length === 0}
+            style={{
+              padding: '9px 18px',
+              borderRadius: '10px',
+              border: '1px solid rgba(124,77,255,0.35)',
+              cursor: 'pointer',
+              background: 'rgba(124,77,255,0.1)',
+              color: '#B388FF',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Clapperboard size={14} /> Cine
+          </button>
+          <button
+            onClick={() => applyScene('noche')}
+            disabled={discovering || lights.length === 0}
+            style={{
+              padding: '9px 18px',
+              borderRadius: '10px',
+              border: '1px solid rgba(255,145,0,0.35)',
+              cursor: 'pointer',
+              background: 'rgba(255,145,0,0.1)',
+              color: '#FF9100',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Moon size={14} /> Noche
           </button>
           <button
             onClick={() => handleAll(false)}

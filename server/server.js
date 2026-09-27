@@ -13,6 +13,10 @@ import { sshManager } from './sshClient.js';
 import { config } from './config.js';
 import { initializeDb, query } from './db.js';
 import { getCryptoMarketExtras } from './cryptoExtras.js';
+import {
+  getHomeSensors, getPlexStatus, plexImageBuffer, getQbitStatus,
+  qbitPauseAll, qbitResumeAll, qbitSetDownloadLimit, sendWakeOnLan, listLightDevices
+} from './homeHub.js';
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2979,6 +2983,149 @@ wss.on('connection', async (ws, request) => {
   ws.on('error', (err) => {
     console.error('[WS] Terminal socket error:', err.message);
   });
+});
+
+// ── Home hub: Plex, qBit, luces, sensores, WOL ───────────────────────────────
+
+async function probeHomeLights() {
+  const devices = await listLightDevices();
+  return Promise.all(devices.map(async (d) => {
+    if (!d.ip) return { ...d, state: false, online: false };
+    try {
+      if (d.lightType && d.lightType !== 'wiz') {
+        return { ...d, state: false, online: true };
+      }
+      const resp = await wizUdp(d.ip, { method: 'getPilot', params: {} });
+      const r = resp?.result || {};
+      return { ...d, state: !!r.state, brightness: r.dimming, online: true };
+    } catch {
+      return { ...d, state: false, online: false };
+    }
+  }));
+}
+
+app.get('/api/home/summary', async (req, res) => {
+  try {
+    const [sensors, plex, qbit, lights, dfOut, dockerOut] = await Promise.all([
+      getHomeSensors(),
+      getPlexStatus(),
+      getQbitStatus(),
+      probeHomeLights().catch(() => []),
+      sshManager.exec('df -P /media/disco_sda /media/disco_sdc / 2>/dev/null || true').catch(() => ''),
+      sshManager.exec(`docker inspect -f '{{.Name}} {{.State.Running}}' plex qbittorrent 2>/dev/null || true`).catch(() => '')
+    ]);
+
+    const disks = [];
+    for (const line of (dfOut || '').split('\n').slice(1)) {
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 6) continue;
+      disks.push({
+        device: cols[0],
+        mount: cols[5],
+        percent: parseInt(cols[4], 10) || 0,
+        free: (parseInt(cols[3], 10) || 0) * 1024
+      });
+    }
+
+    const docker = { plex: false, qbittorrent: false };
+    for (const line of (dockerOut || '').split('\n')) {
+      if (line.includes('plex') && line.includes('true')) docker.plex = true;
+      if (line.includes('qbittorrent') && line.includes('true')) docker.qbittorrent = true;
+    }
+
+    res.json({
+      sensors,
+      plex,
+      qbit,
+      lights: {
+        total: lights.length,
+        on: lights.filter(l => l.state).length,
+        items: lights
+      },
+      disks,
+      docker
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/home/plex/image', async (req, res) => {
+  try {
+    const { buf, contentType } = await plexImageBuffer(req.query.path);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(buf);
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.post('/api/home/qbit', async (req, res) => {
+  const { action, kbps } = req.body || {};
+  try {
+    if (action === 'pause') await qbitPauseAll();
+    else if (action === 'resume') await qbitResumeAll();
+    else if (action === 'limit') await qbitSetDownloadLimit(Math.max(0, Number(kbps) || 0) * 1024);
+    else return res.status(400).json({ error: 'Acción inválida' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/home/lights/scene', async (req, res) => {
+  const scene = req.body?.scene;
+  if (!['cine', 'noche', 'off', 'on'].includes(scene)) {
+    return res.status(400).json({ error: 'Escena inválida' });
+  }
+  try {
+    const lights = await listLightDevices();
+    const withIp = lights.filter(l => l.ip);
+    await Promise.all(withIp.map(async (l) => {
+      try {
+        const isWiz = !l.lightType || l.lightType === 'wiz';
+        if (scene === 'off') {
+          if (isWiz) {
+            await wizUdp(l.ip, { method: 'setPilot', params: { state: false } });
+          } else {
+            await fetch(`http://127.0.0.1:${config.port}/api/wiz/set`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ip: l.ip, mac: l.mac, state: false }),
+              signal: AbortSignal.timeout(3000)
+            }).catch(() => {});
+          }
+          return;
+        }
+        if (isWiz) {
+          const brightness = scene === 'noche' ? 12 : scene === 'cine' ? 18 : 80;
+          const params = { state: true, dimming: brightness };
+          if (scene === 'cine' || scene === 'noche') params.temp = scene === 'noche' ? 2200 : 2700;
+          await wizUdp(l.ip, { method: 'setPilot', params });
+        } else {
+          await fetch(`http://127.0.0.1:${config.port}/api/wiz/set`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: l.ip, mac: l.mac, state: true }),
+            signal: AbortSignal.timeout(3000)
+          }).catch(() => {});
+        }
+      } catch (_) { /* una luz no tira abajo la escena */ }
+    }));
+    res.json({ success: true, count: withIp.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/network/wol', async (req, res) => {
+  try {
+    await sendWakeOnLan(req.body?.mac);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Initialize Database and Load Temperature Module

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun, Droplet, LayoutGrid, Coins } from 'lucide-react';
+import { Activity, Layers, Cpu, Folder, Terminal as TermIcon, Tv as GpuIcon, Network, Upload, Check, X, Clock, Lightbulb, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Thermometer, Server as HardwareIcon, Bell, BellOff, CloudSun, Droplet, LayoutGrid, Coins, Home } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DockerManager from './components/DockerManager';
 import ProcessManager from './components/ProcessManager';
@@ -17,6 +17,7 @@ import Weather from './components/Weather';
 import DailyInfo from './components/DailyInfo';
 import SmartApps from './components/SmartApps';
 import CryptoRadar from './components/CryptoRadar';
+import HomeHub from './components/HomeHub';
 import { useUploads } from './context/UploadContext';
 import { version } from '../package.json';
 
@@ -31,56 +32,91 @@ function RupertaLogo({ size = 22 }) {
 
 // â”€â”€ Hook: Alertas del sistema (CPU / Temp / Docker) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function useSystemAlerts(alertsEnabled) {
-  const cpuHighRef = useRef(0); // seconds CPU > 90%
+  const cpuHighRef = useRef(0);
+  const qbitHighRef = useRef(0);
   const prevDockerRef = useRef(null);
+  const firedRef = useRef({});
 
   useEffect(() => {
     if (!alertsEnabled || !('Notification' in window) || Notification.permission !== 'granted') return;
 
     const notify = (title, body, tag) => {
+      const last = firedRef.current[tag] || 0;
+      if (Date.now() - last < 15 * 60 * 1000) return;
+      firedRef.current[tag] = Date.now();
       new Notification(title, { body, tag, icon: '/pwa-192.png' });
     };
 
     const check = async () => {
       try {
         const res = await fetch('/api/metrics');
-        if (!res.ok) return;
-        const data = await res.json();
-
-        // CPU alta sostenida
-        if (data.cpu > 90) {
-          cpuHighRef.current += 5;
-          if (cpuHighRef.current === 15) {
-            notify('âš ï¸ CPU muy alta', `CPU al ${data.cpu.toFixed(0)}% por mÃ¡s de 10 segundos`, 'cpu-alert');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.cpu > 90) {
+            cpuHighRef.current += 5;
+            if (cpuHighRef.current === 15) {
+              notify('CPU muy alta', `CPU al ${data.cpu.toFixed(0)}% por más de 10 segundos`, 'cpu-alert');
+            }
+          } else {
+            cpuHighRef.current = 0;
           }
-        } else {
-          cpuHighRef.current = 0;
-        }
-
-        // Temperatura alta
-        if (data.temperature && data.temperature > 80) {
-          notify('ðŸŒ¡ï¸ Temperatura crÃ­tica', `CPU a ${data.temperature.toFixed(0)}Â°C â€” revisÃ¡ la refrigeraciÃ³n`, 'temp-alert');
+          const temp = data.cpuTemp || data.temperature;
+          if (temp && temp > 80) {
+            notify('Temperatura crítica', `CPU a ${temp.toFixed(0)}°C — revisá la refrigeración`, 'temp-alert');
+          }
+          (data.disks || []).forEach(d => {
+            if (String(d.mount || '').startsWith('/media') && d.percent >= 90) {
+              notify('Disco casi lleno', `${d.mount} está al ${d.percent}%`, `disk-${d.mount}`);
+            }
+          });
         }
       } catch (_) {}
 
       try {
-        const res2 = await fetch('/api/docker');
-        if (!res2.ok) return;
-        const containers = await res2.json();
-        if (prevDockerRef.current !== null) {
-          const prev = prevDockerRef.current;
-          containers.forEach(c => {
-            const old = prev.find(p => p.id === c.id);
-            if (old && old.state === 'running' && c.state !== 'running') {
-              notify('ðŸ³ Contenedor detenido', `"${c.name}" pasÃ³ de running a ${c.state}`, `docker-${c.id}`);
-            }
-          });
+        const res2 = await fetch('/api/docker/list');
+        if (res2.ok) {
+          const containers = await res2.json();
+          if (prevDockerRef.current !== null) {
+            const prev = prevDockerRef.current;
+            containers.forEach(c => {
+              const old = prev.find(p => p.id === c.id);
+              if (old && old.isRunning && !c.isRunning) {
+                notify('Contenedor detenido', `"${c.name}" se detuvo`, `docker-${c.id}`);
+              }
+            });
+          }
+          prevDockerRef.current = containers;
+          const plex = containers.find(c => c.name === 'plex');
+          if (plex && !plex.isRunning) {
+            notify('Plex caído', 'El contenedor de Plex no está corriendo', 'plex-down');
+          }
         }
-        prevDockerRef.current = containers;
+      } catch (_) {}
+
+      try {
+        const homeRes = await fetch('/api/home/summary');
+        if (homeRes.ok) {
+          const home = await homeRes.json();
+          if (home.sensors?.acWater >= 80) {
+            notify('Tanque del AC', `Nivel al ${home.sensors.acWater.toFixed(0)}% — riesgo de rebalse`, 'ac-tank');
+          }
+          if (home.sensors?.pm25 > 25) {
+            notify('Aire sucio', `PM2.5 en ${home.sensors.pm25.toFixed(0)} µg/m³`, 'pm25');
+          }
+          if (home.qbit?.ok && home.qbit.dlSpeed > 12 * 1024 * 1024) {
+            qbitHighRef.current += 5;
+            if (qbitHighRef.current === 15) {
+              notify('qBit saturando la red', 'La bajada lleva más de 12 MB/s. Podés frenarla en Hoy en casa.', 'qbit-wan');
+            }
+          } else {
+            qbitHighRef.current = 0;
+          }
+        }
       } catch (_) {}
     };
 
     const interval = setInterval(check, 5000);
+    check();
     return () => clearInterval(interval);
   }, [alertsEnabled]);
 }
@@ -227,9 +263,9 @@ function UpdateModal({ onClose, onConfirm, status, message }) {
 
 // â”€â”€ App principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('home');
   const [isConnected, setIsConnected] = useState(false);
-  const [mountedTabs, setMountedTabs] = useState(new Set(['dashboard']));
+  const [mountedTabs, setMountedTabs] = useState(new Set(['home']));
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState(null);
@@ -377,6 +413,7 @@ function App() {
   };
 
   const menuItems = [
+    { category: 'Resumen', id: 'home',       label: 'Hoy en casa',        shortLabel: 'Hoy',        icon: <Home /> },
     { category: 'Resumen', id: 'dashboard',  label: 'Panel Control',      shortLabel: 'Panel',      icon: <Activity /> },
     { category: 'Resumen', id: 'crypto',     label: 'Cripto Radar',       shortLabel: 'Cripto',     icon: <Coins /> },
     { category: 'Resumen', id: 'dailyinfo',  label: 'Info Diaria',         shortLabel: 'Diaria',     icon: <Lightbulb /> },
@@ -398,6 +435,7 @@ function App() {
   ];
 
   const components = {
+    home:       <HomeHub />,
     dashboard:  <Dashboard />,
     crypto:     <CryptoRadar />,
     docker:     <DockerManager />,
@@ -416,6 +454,7 @@ function App() {
   };
 
   const viewMeta = {
+    home:       { title: 'Hoy en casa',            subtitle: 'Luces, sensores, Plex, descargas y discos de un vistazo' },
     dashboard:  { title: 'Panel de Control',       subtitle: 'Resumen de rendimiento y estado del sistema en tiempo real' },
     crypto:     { title: 'Cripto Radar & Asesor Inteligente', subtitle: 'Cuatro dimensiones: técnico, on-chain, derivados y sentimiento. Sin ejecución automática' },
     docker:     { title: 'Contenedores Docker',    subtitle: 'Monitoreo y administración de servicios dockerizados' },
@@ -456,7 +495,7 @@ function App() {
           <span className="brand-name">rupertaMonitor</span>
         </div>
 
-        <nav style={{ flexGrow: 1 }}>
+        <nav className="sidebar-nav">
           <ul className="nav-menu">
             {menuItems.map((item, index) => {
               const prevCategory = index > 0 ? menuItems[index - 1].category : null;

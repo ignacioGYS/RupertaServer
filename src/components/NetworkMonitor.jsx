@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X, Zap } from 'lucide-react';
+import { Network, Users, RefreshCw, Radio, Search, ShieldAlert, Cpu, Eye, Wifi, HelpCircle, Tv, Lightbulb, Laptop, Smartphone, Server, Edit2, Check, X, Zap, Power } from 'lucide-react';
 import InternetHealthPanel from './InternetHealthPanel';
 
 export default function NetworkMonitor() {
@@ -22,6 +22,7 @@ export default function NetworkMonitor() {
   const [scannedPorts, setScannedPorts] = useState({});
   const [wizStates, setWizStates] = useState({});
   const [identifyData, setIdentifyData] = useState({});   // { [ip]: { loading, result, error } }
+  const [wolBusy, setWolBusy] = useState({});
   const [configuringLight, setConfiguringLight] = useState(null); // { ip, mac, customName, isLight, lightType, deviceConfig }
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -109,6 +110,25 @@ export default function NetworkMonitor() {
       setIdentifyData(prev => ({ ...prev, [ip]: { loading: false, result: data, error: null } }));
     } catch (e) {
       setIdentifyData(prev => ({ ...prev, [ip]: { loading: false, result: null, error: e.message } }));
+    }
+  };
+
+  const handleWol = async (mac, name) => {
+    if (!mac) return;
+    setWolBusy(prev => ({ ...prev, [mac]: true }));
+    try {
+      const res = await fetch('/api/network/wol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Wake-on-LAN falló');
+      alert(`Paquete mágico enviado a ${name || mac}. Si WoL está activo en la BIOS, debería encender.`);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setWolBusy(prev => ({ ...prev, [mac]: false }));
     }
   };
 
@@ -1226,6 +1246,18 @@ export default function NetworkMonitor() {
                                   <Eye size={12} />
                                 )}
                                 <span>Puertos</span>
+                              </button>
+                              <button
+                                className="btn btn-secondary btn-icon"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => handleWol(n.mac, n.customName || n.ip)}
+                                disabled={!!wolBusy[n.mac] || !n.mac}
+                                title="Wake-on-LAN: encender esta PC si está apagada"
+                              >
+                                {wolBusy[n.mac]
+                                  ? <div className="spinner" style={{ width: '10px', height: '10px', borderWidth: '1.5px' }}></div>
+                                  : <Power size={12} />}
+                                <span>Encender</span>
                               </button>
                               <button
                                 className="btn btn-secondary btn-icon"
