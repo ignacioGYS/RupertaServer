@@ -1,7 +1,16 @@
 import React, { useState } from 'react';
-import { Download, Film, Tv, Search, RefreshCw, MessageSquare, Subtitles, Cpu, PlayCircle, ExternalLink } from 'lucide-react';
+import { Download, Film, Tv, Search, RefreshCw, MessageSquare, Subtitles, Cpu, PlayCircle, ExternalLink, Home } from 'lucide-react';
 
 const APPS = [
+  {
+    id: 'homeassistant',
+    name: 'Home Assistant',
+    port: 8123,
+    path: '/',
+    color: '#18BCF2',
+    icon: <Home size={40} strokeWidth={1.5} />,
+    imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png',
+  },
   {
     id: 'qbittorrent',
     name: 'qBittorrent',
