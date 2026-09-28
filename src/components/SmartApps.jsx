@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Film, Tv, Search, RefreshCw, MessageSquare, Subtitles, Cpu, PlayCircle, ExternalLink, Home } from 'lucide-react';
+import { Download, Film, Tv, Search, RefreshCw, MessageSquare, Subtitles, PlayCircle, ExternalLink, Home } from 'lucide-react';
 
 const APPS = [
   {
@@ -10,6 +10,17 @@ const APPS = [
     color: '#18BCF2',
     icon: <Home size={40} strokeWidth={1.5} />,
     imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/home-assistant.png',
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    port: 3000,
+    path: '/',
+    color: '#e5e5e5',
+    iconBg: '#ffffff',
+    icon: <MessageSquare size={40} strokeWidth={1.5} />,
+    imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/ollama.png',
+    hint: 'Open WebUI',
   },
   {
     id: 'qbittorrent',
@@ -64,24 +75,6 @@ const APPS = [
     color: '#0c84e4',
     icon: <RefreshCw size={40} strokeWidth={1.5} />,
     imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/syncthing.png',
-  },
-  {
-    id: 'openwebui',
-    name: 'Open WebUI',
-    port: 3000,
-    path: '/',
-    color: '#e5e5e5',
-    icon: <MessageSquare size={40} strokeWidth={1.5} />,
-    imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/open-webui.png',
-  },
-  {
-    id: 'ollama',
-    name: 'Ollama',
-    port: 11434,
-    path: '/',
-    color: '#ffffff',
-    icon: <Cpu size={40} strokeWidth={1.5} />,
-    imgIcon: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/ollama.png',
   },
   {
     id: 'plex',
@@ -156,7 +149,9 @@ export default function SmartApps() {
             width: '80px',
             height: '80px',
             borderRadius: '20px',
-            background: `linear-gradient(135deg, ${app.color}20 0%, transparent 100%)`,
+            background: app.iconBg
+              ? app.iconBg
+              : `linear-gradient(135deg, ${app.color}20 0%, transparent 100%)`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -205,7 +200,7 @@ export default function SmartApps() {
                 backgroundColor: app.color,
                 boxShadow: `0 0 8px ${app.color}`
               }} />
-              Puerto {app.port}
+              {app.hint || `Puerto ${app.port}`}
             </div>
           </div>
 
